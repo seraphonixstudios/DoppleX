@@ -5,13 +5,13 @@ This Part 1 baseline bootstraps a local-first cross-platform desktop app that ru
 Mermaid architecture diagram (high level):
 ```mermaid
 graph TD
-  UI[Desktop UI (Flet)] -->|Sends actions| BrainEngine
-  BrainEngine --> Ollama[Ollama Local LLM]
-  UI -->|Stores data| DB[(SQLite via SQLAlchemy)]
+  UI["Desktop UI (Flet)"] -->|"Sends actions"| BrainEngine
+  BrainEngine --> Ollama["Ollama Local LLM"]
+  UI -->|"Stores data"| DB[("SQLite via SQLAlchemy")]
   BrainEngine --> DB
-  XAPI[(X API v2)] -->|Post/Fetch| XAccount[Account]
-  TikTokAPI[(TikTok via Playwright)] -->|Video Upload| TikTokAccount
-  Ollama -->|Produces content| UI
+  XAPI[("X API v2")] -->|"Post/Fetch"| XAccount[Account]
+  TikTokAPI[("TikTok via Playwright")] -->|"Video Upload"| TikTokAccount
+  Ollama -->|"Produces content"| UI
 ```
 
 This diagram shows the core data and action flow: the UI drives the brain, the brain uses Ollama to generate content, data is persisted locally, and platform connectors can post content when credentials are available.
