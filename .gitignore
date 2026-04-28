@@ -1,0 +1,8 @@
+*.pyc
+__pycache__/
+logs/
+you2.db
+you2.key
+you2.log
+venv/
+.env

@@ -1,0 +1,11 @@
+flet>=2023.9.0
+ruff
+pyinstaller
+sqlalchemy>=2.0
+cryptography>=38
+requests>=2.28
+playwright>=1.40
+apscheduler>=3.7
+python-dotenv>=1.0
+httpx>=0.24
+tweepy>=4.0
