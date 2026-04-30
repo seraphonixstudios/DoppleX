@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 
 def _get_data_dir() -> Path:
     """Get platform-specific data directory for database and files."""
@@ -24,7 +24,7 @@ def _get_data_dir() -> Path:
 DATA_DIR = _get_data_dir()
 DATABASE_URL = os.environ.get("YOU2_DATABASE_URL", f"sqlite:///{DATA_DIR / 'you2.db'}")
 
-engine = create_engine(DATABASE_URL, future=True, echo=False)
+engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

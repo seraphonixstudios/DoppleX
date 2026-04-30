@@ -9,6 +9,7 @@ from encryption.crypto import decrypt, encrypt
 from datetime import datetime, timedelta
 
 from oauth.oauth_config import PROVIDERS
+from utils.time_utils import utc_now
 from oauth.oauth_flow import login_with_oauth
 from db.database import SessionLocal
 from models import Account
@@ -71,12 +72,12 @@ def authorize_provider(provider_name: str) -> str:
                 pass
         if expires_in:
             try:
-                acc.token_expiry = datetime.utcnow() + timedelta(seconds=int(expires_in))
+                acc.token_expiry = utc_now() + timedelta(seconds=int(expires_in))
             except Exception:
                 pass
         if refresh_expires_in:
             try:
-                acc.refresh_token_expiry = datetime.utcnow() + timedelta(seconds=int(refresh_expires_in))
+                acc.refresh_token_expiry = utc_now() + timedelta(seconds=int(refresh_expires_in))
             except Exception:
                 pass
         db.commit()
@@ -133,12 +134,12 @@ def refresh_provider(provider_name: str) -> dict:
             acc.refresh_token_encrypted = encrypt(refresh)
         if expires_in:
             try:
-                acc.token_expiry = datetime.utcnow() + timedelta(seconds=int(expires_in))
+                acc.token_expiry = utc_now() + timedelta(seconds=int(expires_in))
             except Exception:
                 pass
         if data.get('refresh_expires_in'):
             try:
-                acc.refresh_token_expiry = datetime.utcnow() + timedelta(seconds=int(data['refresh_expires_in']))
+                acc.refresh_token_expiry = utc_now() + timedelta(seconds=int(data['refresh_expires_in']))
             except Exception:
                 pass
         db.commit()

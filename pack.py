@@ -3,33 +3,60 @@ import sys
 import platform
 import subprocess
 import os
-from pathlib import Path
-
-def _get_assets():
-    """Get platform-specific assets to bundle."""
-    assets = []
-    src_dir = Path("src")
-    # Add all Python files
-    for py_file in src_dir.rglob("*.py"):
-        assets.append(str(py_file))
-    # Add requirements
-    if Path("requirements.txt").exists():
-        assets.append("requirements.txt")
-    return assets
 
 def _build_windows():
     """Build for Windows."""
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--name", "DoppleX",
+        "--name", "You2SocialBrain",
         "--onefile",
         "--console",
         "--add-data", f"src{os.pathsep}src",
         "--hidden-import", "flet",
+        "--hidden-import", "flet_runtime",
         "--hidden-import", "sqlalchemy",
         "--hidden-import", "cryptography",
         "--hidden-import", "tweepy",
         "--hidden-import", "playwright",
+        "--hidden-import", "requests_oauthlib",
+        "--hidden-import", "apscheduler",
+        "--hidden-import", "apscheduler.schedulers.background",
+        "--hidden-import", "apscheduler.triggers.date",
+        "--hidden-import", "apscheduler.triggers.cron",
+        "--hidden-import", "numpy",
+        "--hidden-import", "click",
+        "--hidden-import", "tiktok_uploader",
+        "--hidden-import", "db.database",
+        "--hidden-import", "models",
+        "--hidden-import", "brain.brain",
+        "--hidden-import", "brain.ollama_bridge",
+        "--hidden-import", "brain.generator",
+        "--hidden-import", "brain.style_learner",
+        "--hidden-import", "embeddings.vector_store",
+        "--hidden-import", "x_api.x_client",
+        "--hidden-import", "tiktok.tiktok_client",
+        "--hidden-import", "platforms.x_poster",
+        "--hidden-import", "platforms.tiktok_poster",
+        "--hidden-import", "platforms.x_scraper",
+        "--hidden-import", "platforms.tiktok_scraper",
+        "--hidden-import", "platforms.x_reply_bot",
+        "--hidden-import", "scheduler.scheduler",
+        "--hidden-import", "encryption.crypto",
+        "--hidden-import", "oauth.oauth_manager",
+        "--hidden-import", "oauth.oauth_flow",
+        "--hidden-import", "oauth.oauth_config",
+        "--hidden-import", "utils.logger",
+        "--hidden-import", "utils.audit",
+        "--hidden-import", "utils.time_utils",
+        "--hidden-import", "utils.error_handler",
+        "--hidden-import", "utils.log_export",
+        "--hidden-import", "config.settings",
+        "--hidden-import", "prompts.prompt_builder",
+        "--hidden-import", "ui.matrix_banner",
+        "--hidden-import", "ui.dialogs",
+        "--hidden-import", "security.token_store",
+        "--hidden-import", "analytics.metrics",
+        "--hidden-import", "image_gen.sd_client",
         "src/main.py"
     ]
     subprocess.run(cmd, check=True)
@@ -38,15 +65,22 @@ def _build_macos():
     """Build for macOS."""
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--name", "DoppleX",
+        "--name", "You2SocialBrain",
         "--onefile",
         "--windowed",
         "--add-data", f"src{os.pathsep}src",
         "--hidden-import", "flet",
+        "--hidden-import", "flet_runtime",
         "--hidden-import", "sqlalchemy",
         "--hidden-import", "cryptography",
         "--hidden-import", "tweepy",
         "--hidden-import", "playwright",
+        "--hidden-import", "requests_oauthlib",
+        "--hidden-import", "apscheduler",
+        "--hidden-import", "numpy",
+        "--hidden-import", "click",
+        "--hidden-import", "analytics.metrics",
+        "--hidden-import", "image_gen.sd_client",
         "src/main.py"
     ]
     subprocess.run(cmd, check=True)
@@ -55,15 +89,22 @@ def _build_linux():
     """Build for Linux."""
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--name", "DoppleX",
+        "--name", "You2SocialBrain",
         "--onefile",
         "--console",
         "--add-data", f"src{os.pathsep}src",
         "--hidden-import", "flet",
+        "--hidden-import", "flet_runtime",
         "--hidden-import", "sqlalchemy",
         "--hidden-import", "cryptography",
         "--hidden-import", "tweepy",
         "--hidden-import", "playwright",
+        "--hidden-import", "requests_oauthlib",
+        "--hidden-import", "apscheduler",
+        "--hidden-import", "numpy",
+        "--hidden-import", "click",
+        "--hidden-import", "analytics.metrics",
+        "--hidden-import", "image_gen.sd_client",
         "src/main.py"
     ]
     subprocess.run(cmd, check=True)
@@ -74,7 +115,7 @@ def main():
         _build_windows()
     elif system == "darwin":
         _build_macos()
-    else:  # Linux and others
+    else:
         _build_linux()
 
 if __name__ == "__main__":

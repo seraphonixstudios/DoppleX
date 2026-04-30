@@ -1,6 +1,4 @@
-from unittest.mock import patch
-
-from src.brain.generator import ContentGenerator
+from unittest.mock import patch, MagicMock
 
 
 class DummyOllama:
@@ -9,16 +7,14 @@ class DummyOllama:
 
 
 def test_content_generator_with_mock(monkeypatch):
+    from brain.generator import ContentGenerator
     generator = ContentGenerator()
-    # Patch the OllamaBridge
     monkeypatch.setattr(generator, "ollama", DummyOllama())
-    # Also patch memory search to return empty list for simplicity
-    with patch("src.brain.generator.top_k_similar_posts", return_value=[]):
-        class DummyAcc:
-            id = 1
-            platform = "X"
-            style_profile = None
-        acc = DummyAcc()
-        content = generator.generate(acc, [])
-        assert isinstance(content, str)
-        assert "Generated" in content or len(content) > 0
+    # Mock brain.generate_post to avoid DB dependencies
+    monkeypatch.setattr(
+        generator.brain, "generate_post",
+        lambda account_id, topic_hint="", mood="": "Generated content from You2.0"
+    )
+    content = generator.generate(1, topic_hint="test", mood="happy")
+    assert isinstance(content, str)
+    assert "Generated" in content or len(content) > 0

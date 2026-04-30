@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from utils.time_utils import utc_now
 
 
 EXPORT_DIR = os.path.join("logs", "exports")
@@ -14,7 +14,7 @@ def export_logs() -> str | None:
         return None
     with open(src, "r", encoding="utf-8") as f:
         data = f.read()
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = utc_now().strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(EXPORT_DIR, f"you2_logs_{timestamp}.log")
     with open(out_path, "w", encoding="utf-8") as g:
         g.write(data)

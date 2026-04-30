@@ -1,5 +1,5 @@
 import pytest
-from src.utils.error_handler import safe_call
+from utils.error_handler import safe_call
 
 
 def test_safe_call_success():

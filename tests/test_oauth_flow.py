@@ -1,7 +1,7 @@
 import pytest
-from src.oauth.oauth_manager import authorize_provider
-from src.db.database import SessionLocal
-from src.models import Account
+from oauth.oauth_manager import authorize_provider
+from db.database import SessionLocal
+from models import Account
 from unittest.mock import patch
 
 
@@ -19,7 +19,7 @@ def test_oauth_authorize_x_stores_tokens(monkeypatch):
         "refresh_token": "TEST_X_REFRESH",
     }
 
-    monkeypatch.setattr("src.oauth.oauth_manager.login_with_oauth", lambda *args, **kwargs: mock_token_resp)
+    monkeypatch.setattr("oauth.oauth_manager.login_with_oauth", lambda *args, **kwargs: mock_token_resp)
     msg = authorize_provider("X")
 
     # Validate that account was created and tokens persisted
@@ -32,15 +32,16 @@ def test_oauth_authorize_x_stores_tokens(monkeypatch):
         # expiry should be roughly now + 3600 seconds; allow a small delta tolerance
         from datetime import datetime, timedelta
         assert isinstance(acc.token_expiry, datetime)
-        delta = acc.token_expiry - datetime.utcnow()
+        from utils.time_utils import utc_now
+        delta = acc.token_expiry - utc_now()
     assert timedelta(seconds=3500) < delta < timedelta(seconds=3700)
 
 
 def test_oauth_refresh_provider_mock(monkeypatch):
-    from src.oauth.oauth_manager import refresh_provider
-    from src.db.database import SessionLocal, engine, Base
+    from oauth.oauth_manager import refresh_provider
+    from db.database import SessionLocal, engine, Base
     # Ensure a clean X account exists for refresh
-    from src.models import Account  # type: ignore
+    from models import Account  # type: ignore
     with SessionLocal() as db:
         acc = db.query(Account).filter(Account.platform == "X").first()
         if not acc:
@@ -59,7 +60,7 @@ def test_oauth_refresh_provider_mock(monkeypatch):
         @property
         def text(self):
             return "ok"
-    import src.oauth.oauth_manager as om
-    monkeypatch.setattr("src.oauth.oauth_manager.requests.post", lambda *args, **kwargs: DummyResp())
+    import oauth.oauth_manager as om
+    monkeypatch.setattr("oauth.oauth_manager.requests.post", lambda *args, **kwargs: DummyResp())
     res = refresh_provider("X")
     assert res["ok"] is True

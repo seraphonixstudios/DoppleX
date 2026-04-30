@@ -6,3 +6,8 @@ you2.key
 you2.log
 venv/
 .env
+
+# PyInstaller
+build/
+dist/
+*.spec
