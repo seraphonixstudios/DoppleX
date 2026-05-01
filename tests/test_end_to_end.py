@@ -95,17 +95,58 @@ def test_full_account_lifecycle():
         assert result.exit_code == 0
         assert "Scheduled from e2e test" in result.output
 
+        # 7. Cancel the scheduled post
+        result = runner.invoke(cli, ["cancel", "--post-id", str(scheduled_id)])
+        assert result.exit_code == 0
+        assert "cancelled" in result.output
+
+        # 8. Regenerate variation
+        result = runner.invoke(cli, [
+            "regenerate",
+            "--account-id", str(account_id),
+            "Original test content here",
+        ])
+        assert result.exit_code == 0
+        assert len(result.output.strip()) > 0
+
+        # 9. Export data
+        result = runner.invoke(cli, ["export-data", "-o", "test_export.json"])
+        assert result.exit_code == 0
+        assert "Exported" in result.output
+        import os
+        assert os.path.exists("test_export.json")
+        os.remove("test_export.json")
+
+        # 10. Pipeline command (generate + schedule)
+        schedule_time = (utc_now() + timedelta(days=2)).strftime("%Y-%m-%d %H:%M")
+        result = runner.invoke(cli, [
+            "pipeline",
+            "--account-id", str(account_id),
+            "--topic", "pipeline test",
+            "--date", schedule_time,
+        ])
+        assert result.exit_code == 0, result.output
+        assert "Generated content" in result.output
+        assert "Scheduled post" in result.output
+
+        # 11. Status command
+        result = runner.invoke(cli, ["status"])
+        assert result.exit_code == 0
+        assert "Accounts:" in result.output
+
+        # 12. Delete account
+        result = runner.invoke(cli, ["delete-account", "--account-id", str(account_id)])
+        assert result.exit_code == 0
+        assert "Deleted account" in result.output
+
+        with SessionLocal() as db:
+            acc = db.get(Account, account_id)
+            assert acc is None
+
     finally:
         OllamaBridge.chat = original_chat
         OllamaBridge.generate = original_generate
         OllamaBridge.embeddings = original_embed
-
-    # Cleanup
-    with SessionLocal() as db:
-        acc = db.query(Account).filter(Account.id == account_id).first()
-        if acc:
-            db.delete(acc)
-            db.commit()
 
 
 def test_scheduler_cancel_post():
@@ -162,3 +203,41 @@ def test_error_handler_safe_call():
 
     assert safe_call("good", good)["ok"] is True
     assert safe_call("bad", bad)["ok"] is False
+
+
+def test_dry_run_mode():
+    """Verify dry-run flag prevents real API calls."""
+    runner = CliRunner()
+
+    with SessionLocal() as db:
+        acc = Account(platform="X", username="dryrun_test")
+        db.add(acc)
+        db.commit()
+        db.refresh(acc)
+        account_id = acc.id
+
+    # post-x with --dry-run should not attempt real API call
+    result = runner.invoke(cli, [
+        "--dry-run", "post-x",
+        "--account-id", str(account_id),
+        "Test dry run content",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "[DRY RUN]" in result.output
+
+    # post-tiktok with --dry-run
+    result = runner.invoke(cli, [
+        "--dry-run", "post-tiktok",
+        "--account-id", str(account_id),
+        "--video-path", "fake.mp4",
+        "Test dry run caption",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "[DRY RUN]" in result.output
+
+    # Cleanup
+    with SessionLocal() as db:
+        acc = db.get(Account, account_id)
+        if acc:
+            db.delete(acc)
+            db.commit()

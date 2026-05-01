@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -53,6 +54,53 @@ class Settings:
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 
+    @property
+    def _settings_path(self) -> Path:
+        return self.data_dir / "settings.json"
+
+    def load_from_disk(self) -> None:
+        """Override defaults with persisted settings from disk."""
+        path = self._settings_path
+        if not path.exists():
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for key, value in data.items():
+                if hasattr(self, key) and key != "data_dir":
+                    # Type coercion for numeric fields
+                    if key in ("max_retries", "max_tokens", "top_k_memory", "embedding_dim"):
+                        value = int(value)
+                    elif key in ("temperature",):
+                        value = float(value)
+                    elif key == "use_dry_run":
+                        value = bool(value)
+                    setattr(self, key, value)
+        except Exception:
+            pass
+
+    def save_to_disk(self) -> None:
+        """Persist current settings to disk."""
+        data = {
+            "ollama_url": self.ollama_url,
+            "ollama_model": self.ollama_model,
+            "embedding_model": self.embedding_model,
+            "use_dry_run": self.use_dry_run,
+            "log_level": self.log_level,
+            "sd_webui_url": self.sd_webui_url,
+            "scheduler_timezone": self.scheduler_timezone,
+            "max_retries": self.max_retries,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "top_k_memory": self.top_k_memory,
+            "embedding_dim": self.embedding_dim,
+        }
+        try:
+            with open(self._settings_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
     def get_db_url(self) -> str:
         if self.db_url.startswith("sqlite:///") and not self.db_url.startswith("sqlite:////"):
             return f"sqlite:///{self.data_dir / 'you2.db'}"
@@ -79,12 +127,10 @@ def detect_models(ollama_url: str = "http://localhost:11434") -> tuple[str, str]
             logger.warning("No Ollama models found, using defaults")
             return "qwen3:8b-gpu", "qwen3:8b-gpu"
         
-        # Prefer general-purpose chat models for generation
         chat_candidates = [m for m in models if "llava" not in m.lower()]
         if not chat_candidates:
             chat_candidates = models
         
-        # Prioritize order: qwen3, dolphin, then any other non-vision
         chat_model = None
         for candidate in chat_candidates:
             if "qwen3" in candidate.lower():
@@ -98,7 +144,6 @@ def detect_models(ollama_url: str = "http://localhost:11434") -> tuple[str, str]
         if not chat_model:
             chat_model = chat_candidates[0]
         
-        # For embeddings, prefer smaller/faster models, but any will work
         embed_model = None
         for candidate in models:
             if "qwen3" in candidate.lower():
@@ -128,8 +173,9 @@ def load_settings() -> Settings:
         return _SETTINGS_CACHE
 
     settings = Settings()
+    settings.load_from_disk()
 
-    # Auto-detect models if not explicitly set by environment
+    # Auto-detect models if not explicitly set by environment or disk
     if not settings.ollama_model or not settings.embedding_model:
         chat, embed = detect_models(settings.ollama_url)
         if not settings.ollama_model:

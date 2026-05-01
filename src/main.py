@@ -1082,7 +1082,8 @@ class You2App:
             self.settings.embedding_model = embedding_model.value
             self.settings.sd_webui_url = sd_url.value
             self.settings.temperature = temp_slider.value
-            self.status_text.value = "Settings updated (in-memory)"
+            self.settings.save_to_disk()
+            self.status_text.value = "Settings saved to disk"
             self.page.update()
 
         def refresh_logs():

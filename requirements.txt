@@ -1,42 +1,11 @@
-# UI Framework
-flet>=0.21.0
-flet-runtime>=0.21.0
+# You2.0 Social Brain - Core Dependencies
+# Install with: pip install -r requirements.txt
+# For full features: pip install -r requirements.txt -r requirements-gui.txt -r requirements-tiktok.txt
 
-# Database
-sqlalchemy>=2.0.0
-
-# Encryption & Security
-cryptography>=42.0.0
-keyring>=25.0.0
-
-# OAuth
-requests>=2.31.0
-requests-oauthlib>=1.3.1
-
-# Brain/AI
-numpy>=1.26.0
-
-# Platform APIs
-tweepy>=4.14.0
-playwright>=1.40.0
-
-# Scheduling
-apscheduler>=3.10.0
-
-# CLI
+# Core (required)
 click>=8.1.0
-
-# Utilities
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-
-# Development
-pytest>=7.4.0
-pytest-cov>=4.1.0
-ruff>=0.1.0
-
-# Packaging
-pyinstaller>=6.0.0
-
-# Logging
-colorlog>=6.8.0
+sqlalchemy>=2.0.0
+cryptography>=42.0.0
+requests>=2.31.0
+numpy>=1.26.0
+apscheduler>=3.10.0
