@@ -18,6 +18,9 @@ A fully local, AI-powered personal content brain for social media management. Ru
 - **Secure Credential Storage**: Fernet encryption with keyring fallback
 - **Full Audit Logging**: Every action tracked for transparency
 - **CLI + GUI + EXE**: Desktop app, command-line, and standalone Windows executable
+- **Settings Persistence**: Settings saved to disk and survive app restarts
+- **Dry-Run Mode**: Test pipelines safely without making real API calls
+- **Data Export**: Export accounts, posts, and style profiles to JSON
 
 ## Architecture
 
@@ -46,7 +49,29 @@ python pack.py
 dist\You2SocialBrain.exe
 ```
 
-### Option 2: Run from Source
+### Option 2: Install via pip (recommended)
+
+```bash
+# Core only (CLI mode)
+pip install -e .
+
+# With GUI
+pip install -e ".[gui]"
+
+# With TikTok support
+pip install -e ".[tiktok]"
+
+# With X media upload support
+pip install -e ".[x]"
+
+# Everything (GUI + TikTok + X + keyring)
+pip install -e ".[all]"
+
+# Development dependencies
+pip install -e ".[dev]"
+```
+
+### Option 3: Run from Source
 
 #### Prerequisites
 - Python 3.12+ (tested on 3.14)
@@ -57,6 +82,9 @@ dist\You2SocialBrain.exe
 #### Installation
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-gui.txt        # if using GUI
+pip install -r requirements-tiktok.txt     # if posting to TikTok
+pip install -r requirements-x.txt          # if uploading X media
 playwright install
 ```
 
@@ -100,6 +128,43 @@ python -m src.cli --help
    python -m src.cli post-x --account-id 1 "Your generated content here"
    ```
 
+5. **Full pipeline** (generate + schedule in one shot):
+   ```bash
+   python -m src.cli pipeline --account-id 1 --topic "AI news" --date "2026-05-02 09:00"
+   ```
+
+6. **Dry-run everything first** (safe, no real API calls):
+   ```bash
+   python -m src.cli --dry-run post-x --account-id 1 "Test post"
+   ```
+
+## CLI Commands
+
+```
+add-account        Add a social media account
+analyze-style      Analyze and learn writing style
+cancel             Cancel a scheduled post
+delete-account     Delete an account and all its data
+export-data        Export accounts, posts, and style profiles to JSON
+generate           Generate a post for an account
+gui                Launch the desktop app
+list-accounts      List all accounts
+list-scheduled     List upcoming scheduled posts
+pipeline           Full pipeline: generate content + schedule it for posting
+post-tiktok        Post video to TikTok
+post-x             Post to X immediately
+regenerate         Regenerate a variation of existing content
+reply-bot-check    Run reply bot once for an account
+schedule           Schedule a post
+scrape-tiktok      Scrape TikTok history
+scrape-x           Scrape X/Twitter history
+status             Show system status (Ollama, accounts, scheduled posts)
+```
+
+Global options:
+- `--debug` — Enable debug logging
+- `--dry-run` — Simulate actions without making real API calls
+
 ## Testing
 
 All tests run with pytest:
@@ -113,7 +178,9 @@ Current test coverage includes:
 - OAuth flow token storage and refresh
 - TikTok upload dry-run and mocks
 - Scheduler scheduling and cancellation
-- End-to-end account lifecycle (add, generate, analyze, schedule)
+- End-to-end account lifecycle (add, generate, analyze, schedule, cancel, delete, export)
+- Full pipeline command (generate + schedule)
+- Dry-run mode across post commands
 - Error handler safe_call utility
 - Packaging smoke test
 
@@ -134,28 +201,12 @@ Current test coverage includes:
 
 ## Database Schema
 
-- **accounts**: Platform credentials, tokens, cookies
+- **accounts**: Platform credentials, tokens, cookies, reply bot settings
 - **style_profiles**: Learned tone, topics, hashtags, summaries
 - **posts**: Full post history with engagement metrics and embeddings
 - **memory_chunks**: RAG memory chunks for context retrieval
 - **scheduled_posts**: Future posts with scheduling metadata
 - **audit_logs**: Complete action audit trail
-
-## CLI Commands
-
-```
-gui                Launch the desktop app
-add-account        Add a social media account
-list-accounts      List all accounts
-generate           Generate a post
-analyze-style      Analyze writing style
-scrape-x           Scrape X/Twitter history
-scrape-tiktok      Scrape TikTok history
-post-x             Post to X immediately
-post-tiktok        Post video to TikTok
-schedule           Schedule a post
-list-scheduled     List upcoming scheduled posts
-```
 
 ## Feature Details
 
@@ -181,7 +232,7 @@ list-scheduled     List upcoming scheduled posts
 
 ## Production Notes
 
-- All API calls are real (not simulated) when credentials are provided
+- All API calls are real (not simulated) when credentials are provided and dry-run is off
 - TikTok posting requires valid session cookies and Playwright
 - X posting supports OAuth 2.0 bearer tokens and API v2
 - X image posts require OAuth 1.0a credentials (separate from OAuth 2.0 bearer token)
@@ -190,6 +241,7 @@ list-scheduled     List upcoming scheduled posts
 - Embeddings are generated via Ollama for privacy
 - Credentials are encrypted at rest using Fernet
 - SQLAlchemy 2.0 compatible (uses `Session.get()` instead of legacy `Query.get()`)
+- Settings are persisted to `%APPDATA%/You2SocialBrain/settings.json` (Windows) or equivalent on macOS/Linux
 
 ## License
 
