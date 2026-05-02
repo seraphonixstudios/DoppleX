@@ -39,6 +39,7 @@ from encryption.crypto import encrypt, decrypt
 from oauth.oauth_config import PROVIDERS
 from oauth.oauth_manager import authorize_provider, refresh_provider
 from ui.matrix_banner import matrix_header
+from ui.cyber_theme import Neon, MONO, neon_card, neon_button, ghost_button, neon_input, neon_dropdown, terminal_container, status_badge, apply_page_theme
 from ui.tray_manager import TrayManager
 from config.settings import load_settings
 from image_gen.sd_client import ImageGenerator
@@ -71,8 +72,8 @@ class You2App:
     def __init__(self, page: ft.Page):
         self.page = page
         self.page.title = "You2.0 Social Brain"
-        self.page.theme_mode = ft.ThemeMode.DARK
-        self.page.padding = 20
+        apply_page_theme(self.page)
+        self.page.padding = 12
         self.page.window_width = 1400
         self.page.window_height = 900
 
@@ -189,7 +190,7 @@ class You2App:
                     ft.SnackBar(
                         content=ft.Text(f"{message} (Hint: {hint})"),
                         action="Dismiss",
-                        bgcolor=ft.Colors.RED_400,
+                        bgcolor=Neon.RED_400,
                     )
                 )
             except Exception:
@@ -216,6 +217,12 @@ class You2App:
         self.nav_rail = ft.NavigationRail(
             selected_index=0,
             label_type=ft.NavigationRailLabelType.ALL,
+            indicator_color=Neon.GREEN,
+            indicator_shape=ft.RoundedRectangleBorder(radius=2),
+            selected_icon_theme=ft.IconThemeData(color=Neon.GREEN, size=24),
+            unselected_icon_theme=ft.IconThemeData(color=Neon.GRAY, size=22),
+            selected_label_text_style=ft.TextStyle(color=Neon.GREEN, font_family=MONO, size=12),
+            unselected_label_text_style=ft.TextStyle(color=Neon.GRAY, font_family=MONO, size=11),
             min_width=100,
             min_extended_width=200,
             group_alignment=-0.9,
@@ -239,8 +246,8 @@ class You2App:
 
         # Status bar with color coding
         self.status_text = ft.Text("Ready", size=12)
-        self.ollama_status = ft.Text("Ollama: checking...", size=12, color=ft.Colors.GREY_400)
-        self.db_status = ft.Text("DB: ok", size=12, color=ft.Colors.GREEN_400)
+        self.ollama_status = ft.Text("Ollama: checking...", size=12, color=Neon.GRAY)
+        self.db_status = ft.Text("DB: ok", size=12, color=Neon.GREEN)
         
         # Help button
         help_btn = ft.IconButton(
@@ -255,10 +262,10 @@ class You2App:
                 header,
                 ft.Row([
                     self.nav_rail,
-                    ft.VerticalDivider(width=1),
+                    ft.VerticalDivider(width=1, color=Neon.BORDER),
                     self.content_area,
                 ], expand=True),
-                ft.Divider(height=1),
+                ft.Divider(height=1, color=Neon.BORDER),
                 ft.Row([
                     self.status_text,
                     ft.Text(" | ", size=12),
@@ -297,10 +304,10 @@ class You2App:
     def _show_toast(self, message: str, type_: str = "info"):
         """Show a toast notification."""
         colors = {
-            "info": ft.Colors.BLUE_400,
-            "success": ft.Colors.GREEN_400,
-            "warning": ft.Colors.ORANGE_400,
-            "error": ft.Colors.RED_400,
+            "info": Neon.CYAN,
+            "success": Neon.GREEN,
+            "warning": Neon.AMBER,
+            "error": Neon.RED_400,
         }
         icon = {
             "info": ft.Icons.INFO,
@@ -311,10 +318,10 @@ class You2App:
         self.page.show_snack_bar(
             ft.SnackBar(
                 content=ft.Row([
-                    ft.Icon(icon.get(type_, ft.Icons.INFO), color=ft.Colors.WHITE, size=20),
-                    ft.Text(message, color=ft.Colors.WHITE),
+                    ft.Icon(icon.get(type_, ft.Icons.INFO), color=Neon.WHITE, size=20),
+                    ft.Text(message, color=Neon.WHITE),
                 ]),
-                bgcolor=colors.get(type_, ft.Colors.BLUE_400),
+                bgcolor=colors.get(type_, Neon.CYAN),
                 duration=3000,
             )
         )
@@ -350,14 +357,14 @@ class You2App:
                     model = self.settings.ollama_model
                     if available:
                         self.ollama_status.value = f"Ollama: connected ({model})"
-                        self.ollama_status.color = ft.Colors.GREEN_400
+                        self.ollama_status.color = Neon.GREEN
                     else:
                         self.ollama_status.value = f"Ollama: offline"
-                        self.ollama_status.color = ft.Colors.RED_400
+                        self.ollama_status.color = Neon.RED_400
                     self.page.update()
                 except Exception:
                     self.ollama_status.value = "Ollama: error"
-                    self.ollama_status.color = ft.Colors.RED_400
+                    self.ollama_status.color = Neon.RED_400
                     self.page.update()
                 import time
                 time.sleep(10)
@@ -377,7 +384,7 @@ class You2App:
         if accounts == 0:
             self.content_area.content = ft.Column([
                 ft.Text("Welcome to You2.0 Social Brain", size=28, weight=ft.FontWeight.BOLD),
-                ft.Text("Your AI-powered social media assistant", size=14, color=ft.Colors.GREY_400),
+                ft.Text("Your AI-powered social media assistant", size=14, color=Neon.GRAY),
                 ft.Divider(),
                 ft.Text("Get Started", size=20, weight=ft.FontWeight.BOLD),
                 ft.Row([
@@ -385,21 +392,21 @@ class You2App:
                         "1. Add Account",
                         "Connect your X or TikTok account",
                         ft.Icons.ACCOUNT_CIRCLE,
-                        ft.Colors.BLUE_400,
+                        Neon.CYAN,
                         lambda _: self._nav_to(1),
                     ),
                     self._action_card(
                         "2. Run Diagnostics",
                         "Check that everything is working",
                         ft.Icons.MEDICAL_SERVICES,
-                        ft.Colors.GREEN_400,
+                        Neon.GREEN,
                         lambda _: self._nav_to(9),
                     ),
                     self._action_card(
                         "3. Generate Content",
                         "Create your first AI-powered post",
                         ft.Icons.CREATE,
-                        ft.Colors.PURPLE_400,
+                        Neon.MAGENTA,
                         lambda _: self._nav_to(3),
                     ),
                 ], wrap=True),
@@ -446,8 +453,8 @@ class You2App:
                 ft.Column([
                     ft.Icon(icon, size=40, color=color),
                     ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
-                    ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
-                    ft.ElevatedButton("Go", on_click=on_click, bgcolor=color, color=ft.Colors.WHITE),
+                    ft.Text(subtitle, size=12, color=Neon.GRAY),
+                    ft.ElevatedButton("Go", on_click=on_click, bgcolor=color, color=Neon.WHITE),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=24,
                 width=200,
@@ -459,13 +466,18 @@ class You2App:
         return ft.Card(
             content=ft.Container(
                 ft.Column([
-                    ft.Icon(icon, size=32),
-                    ft.Text(value, size=28, weight=ft.FontWeight.BOLD),
-                    ft.Text(title, size=12),
+                    ft.Icon(icon, size=32, color=Neon.GREEN),
+                    ft.Text(value, size=28, weight=ft.FontWeight.BOLD, color=Neon.GREEN, font_family=MONO),
+                    ft.Text(title, size=12, color=Neon.GRAY, font_family=MONO),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=20,
                 width=160,
-            )
+                bgcolor=Neon.PANEL_BG,
+                border=ft.border.all(1, Neon.BORDER),
+                border_radius=ft.border_radius.all(2),
+                shadow=ft.BoxShadow(blur_radius=8, color=Neon.BORDER_GLOW),
+            ),
+            elevation=0,
         )
 
     def _show_accounts(self):
@@ -479,9 +491,9 @@ class You2App:
                 accounts_col.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.Colors.GREY_600),
+                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=Neon.GRAY),
                             ft.Text("No accounts yet", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=ft.Colors.GREY_400),
+                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=Neon.GRAY),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         alignment=ft.alignment.center,
                         padding=40,
@@ -626,7 +638,7 @@ class You2App:
                     cookies_tf,
                     ft.ElevatedButton("Add Account", on_click=add_account_clicked),
                 ], width=450, scroll=ft.ScrollMode.AUTO),
-                ft.VerticalDivider(width=1),
+                ft.VerticalDivider(width=1, color=Neon.BORDER),
                 ft.Column([
                     ft.Text("Existing Accounts", size=16, weight=ft.FontWeight.BOLD),
                     accounts_col,
@@ -1065,7 +1077,7 @@ class You2App:
                     ft.Container(
                         ft.Text(day_name, size=10, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                         alignment=ft.alignment.center,
-                        bgcolor=ft.Colors.GREY_800,
+                        bgcolor=Neon.PANEL_BG,
                         border_radius=4,
                     )
                 )
@@ -1087,12 +1099,12 @@ class You2App:
                         calendar_grid.controls.append(ft.Container())
                     else:
                         count = post_days.get(day, 0)
-                        color = ft.Colors.BLUE_400 if count > 0 else ft.Colors.GREY_800
+                        color = Neon.CYAN if count > 0 else Neon.PANEL_BG
                         calendar_grid.controls.append(
                             ft.Container(
                                 ft.Column([
                                     ft.Text(str(day), size=12, text_align=ft.TextAlign.CENTER),
-                                    ft.Text(f"{count} post{'s' if count != 1 else ''}" if count else "", size=9, color=ft.Colors.WHITE70),
+                                    ft.Text(f"{count} post{'s' if count != 1 else ''}" if count else "", size=9, color=Neon.WHITE70),
                                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
                                 alignment=ft.alignment.center,
                                 bgcolor=color,
@@ -1117,7 +1129,7 @@ class You2App:
             calendar_grid,
             ft.Divider(),
             ft.Text("Upcoming Posts:", weight=ft.FontWeight.BOLD),
-            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=ft.Colors.GREY_400),
+            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=Neon.GRAY),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
 
@@ -1126,7 +1138,7 @@ class You2App:
         search_tf = ft.TextField(label="Search posts...", width=300, hint_text="Type to filter by content")
         posts_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         status = ft.Text()
-        result_count = ft.Text("", size=12, color=ft.Colors.GREY_400)
+        result_count = ft.Text("", size=12, color=Neon.GRAY)
 
         def refresh_accounts():
             account_dd.options = [ft.dropdown.Option("0", "All Accounts")]
@@ -1156,9 +1168,9 @@ class You2App:
                 posts_list.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.Icons.SEARCH_OFF, size=48, color=ft.Colors.GREY_600),
+                            ft.Icon(ft.Icons.SEARCH_OFF, size=48, color=Neon.GRAY),
                             ft.Text("No posts found", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Try adjusting your search or filter", size=12, color=ft.Colors.GREY_400),
+                            ft.Text("Try adjusting your search or filter", size=12, color=Neon.GRAY),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         alignment=ft.alignment.center,
                         padding=40,
@@ -1282,7 +1294,7 @@ class You2App:
                                 from_y=0,
                                 to_y=count,
                                 width=16,
-                                color=ft.Colors.BLUE_400,
+                                color=Neon.CYAN,
                                 tooltip=ft.Tooltip(f"{day}: {count}"),
                             )]
                         )
@@ -1291,8 +1303,8 @@ class You2App:
                     bar_groups=bar_groups,
                     bottom_axis=ft.ChartAxis(labels=[]),
                     left_axis=ft.ChartAxis(labels_size=20, title=ft.Text("Posts"), title_size=20),
-                    horizontal_grid_lines=ft.ChartGridLines(color=ft.Colors.GREY_800, width=1),
-                    tooltip_bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.GREY_800),
+                    horizontal_grid_lines=ft.ChartGridLines(color=Neon.PANEL_BG, width=1),
+                    tooltip_bgcolor=ft.Colors.with_opacity(0.8, Neon.PANEL_BG),
                     max_y=max_count + 1,
                     expand=True,
                 )
@@ -1623,17 +1635,17 @@ class You2App:
                 
                 # Color-code status
                 if report.overall_status == "ok":
-                    status_text.color = ft.Colors.GREEN_400
+                    status_text.color = Neon.GREEN
                 elif report.overall_status == "warning":
-                    status_text.color = ft.Colors.ORANGE_400
+                    status_text.color = Neon.AMBER
                 else:
-                    status_text.color = ft.Colors.RED_400
+                    status_text.color = Neon.RED_400
                     
             except Exception as e:
                 tb = traceback.format_exc()
                 report_box.value = f"Diagnostics failed: {e}\n\n{tb}"
                 status_text.value = "Diagnostics failed"
-                status_text.color = ft.Colors.RED_400
+                status_text.color = Neon.RED_400
             finally:
                 spinner.visible = False
                 self.page.update()
