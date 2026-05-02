@@ -11,6 +11,6 @@ from utils.logger import get_logger
 logger = get_logger("you2.x_poster")
 
 
-def post_text(account: Account, content: str, reply_to: str | None = None) -> dict:
+async def post_text(account: Account, content: str, reply_to: str | None = None) -> dict:
     client = XClient(account)
-    return client.post_tweet(content, reply_to=reply_to)
+    return await client.post_tweet(content, reply_to=reply_to)

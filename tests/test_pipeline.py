@@ -56,15 +56,26 @@ def test_content_queue_lifecycle():
             db.commit()
 
 
-def test_bulk_generate():
+@pytest.mark.asyncio
+async def test_bulk_generate():
     """Test bulk generation across topics."""
     from brain.ollama_bridge import OllamaBridge
     original_chat = OllamaBridge.chat
-    OllamaBridge.chat = lambda self, messages, model=None, temperature=None, max_tokens=None: "Bulk gen content!"
     original_generate = OllamaBridge.generate
-    OllamaBridge.generate = lambda self, prompt, model=None, temperature=None, max_tokens=None: '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
     original_embed = OllamaBridge.embeddings
-    OllamaBridge.embeddings = lambda self, text, model=None: [0.1] * 768
+
+    async def mock_chat(self, messages, model=None, temperature=None, max_tokens=None):
+        return "Bulk gen content!"
+
+    async def mock_generate(self, prompt, model=None, temperature=None, max_tokens=None):
+        return '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
+
+    async def mock_embed(self, text, model=None):
+        return [0.1] * 768
+
+    OllamaBridge.chat = mock_chat
+    OllamaBridge.generate = mock_generate
+    OllamaBridge.embeddings = mock_embed
 
     try:
         with SessionLocal() as db:
@@ -75,7 +86,7 @@ def test_bulk_generate():
             account_id = acc.id
 
         pipe = PipelineEngine()
-        items = pipe.bulk_generate(
+        items = await pipe.bulk_generate(
             account_id=account_id,
             topics=["AI", "Python", "DevOps"],
             count_per_topic=2,
@@ -147,15 +158,26 @@ def test_best_times():
         assert isinstance(score, int)
 
 
-def test_scrape_and_generate_pipeline():
+@pytest.mark.asyncio
+async def test_scrape_and_generate_pipeline():
     """Test the scrape → analyze → generate → queue pipeline."""
     from brain.ollama_bridge import OllamaBridge
     original_chat = OllamaBridge.chat
-    OllamaBridge.chat = lambda self, messages, model=None, temperature=None, max_tokens=None: "Pipeline generated!"
     original_generate = OllamaBridge.generate
-    OllamaBridge.generate = lambda self, prompt, model=None, temperature=None, max_tokens=None: '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
     original_embed = OllamaBridge.embeddings
-    OllamaBridge.embeddings = lambda self, text, model=None: [0.1] * 768
+
+    async def mock_chat(self, messages, model=None, temperature=None, max_tokens=None):
+        return "Pipeline generated!"
+
+    async def mock_generate(self, prompt, model=None, temperature=None, max_tokens=None):
+        return '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
+
+    async def mock_embed(self, text, model=None):
+        return [0.1] * 768
+
+    OllamaBridge.chat = mock_chat
+    OllamaBridge.generate = mock_generate
+    OllamaBridge.embeddings = mock_embed
 
     try:
         with SessionLocal() as db:
@@ -166,7 +188,7 @@ def test_scrape_and_generate_pipeline():
             account_id = acc.id
 
         pipe = PipelineEngine()
-        result = pipe.scrape_and_generate(account_id, topic="testing", mood="happy")
+        result = await pipe.scrape_and_generate(account_id, topic="testing", mood="happy")
 
         assert result["ok"] is True
         assert "content" in result
@@ -184,7 +206,8 @@ def test_scrape_and_generate_pipeline():
         OllamaBridge.embeddings = original_embed
 
 
-def test_cross_post():
+@pytest.mark.asyncio
+async def test_cross_post():
     """Test cross-post scheduling."""
     with SessionLocal() as db:
         x_acc = Account(platform="X", username="x_cross")
@@ -197,7 +220,7 @@ def test_cross_post():
 
     pipe = PipelineEngine()
     schedule_time = utc_now() + timedelta(days=1)
-    result = pipe.cross_post(
+    result = await pipe.cross_post(
         x_account_id=x_acc.id,
         tiktok_account_id=tiktok_acc.id,
         content="Cross-post test",
@@ -251,7 +274,11 @@ def test_queue_cli_commands():
     # Mock Ollama
     from brain.ollama_bridge import OllamaBridge
     original_chat = OllamaBridge.chat
-    OllamaBridge.chat = lambda self, messages, model=None, temperature=None, max_tokens=None: "CLI queued content!"
+
+    async def mock_chat(self, messages, model=None, temperature=None, max_tokens=None):
+        return "CLI queued content!"
+
+    OllamaBridge.chat = mock_chat
 
     try:
         # Queue content

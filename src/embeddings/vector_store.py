@@ -27,11 +27,11 @@ class VectorStore:
         self.embedding_model = settings.embedding_model
         self.dim = settings.embedding_dim
 
-    def _get_embedding(self, text: str) -> np.ndarray | None:
+    async def _get_embedding(self, text: str) -> np.ndarray | None:
         if not text or not text.strip():
             return None
         try:
-            vec = self.ollama.embeddings(text, model=self.embedding_model)
+            vec = await self.ollama.embeddings(text, model=self.embedding_model)
             if vec is not None:
                 return np.array(vec, dtype=np.float32)
         except Exception:
@@ -50,32 +50,32 @@ class VectorStore:
             vec = vec / norm
         return vec
 
-    def store_post_embedding(self, post_id: int) -> None:
+    async def store_post_embedding(self, post_id: int) -> None:
         with SessionLocal() as db:
             post = db.get(PostHistory, post_id)
             if not post or not post.content:
                 return
-            vec = self._get_embedding(post.content)
+            vec = await self._get_embedding(post.content)
             if vec is not None:
                 post.embedding = json.dumps(vec.tolist())
                 db.commit()
 
-    def store_memory_embedding(self, memory_id: int) -> None:
+    async def store_memory_embedding(self, memory_id: int) -> None:
         with SessionLocal() as db:
             chunk = db.get(MemoryChunk, memory_id)
             if not chunk or not chunk.content:
                 return
-            vec = self._get_embedding(chunk.content)
+            vec = await self._get_embedding(chunk.content)
             if vec is not None:
                 chunk.embedding = json.dumps(vec.tolist())
                 db.commit()
 
-    def store_style_embedding(self, account_id: int) -> None:
+    async def store_style_embedding(self, account_id: int) -> None:
         with SessionLocal() as db:
             profile = db.query(StyleProfile).filter(StyleProfile.account_id == account_id).first()
             if not profile or not profile.style_summary:
                 return
-            vec = self._get_embedding(profile.style_summary)
+            vec = await self._get_embedding(profile.style_summary)
             if vec is not None:
                 profile.embedding = json.dumps(vec.tolist())
                 db.commit()
@@ -89,8 +89,8 @@ class VectorStore:
         except Exception:
             return None
 
-    def search_similar_posts(self, account_id: int, query: str, k: int = 5) -> List[Tuple[PostHistory, float]]:
-        query_vec = self._get_embedding(query)
+    async def search_similar_posts(self, account_id: int, query: str, k: int = 5) -> List[Tuple[PostHistory, float]]:
+        query_vec = await self._get_embedding(query)
         if query_vec is None:
             return []
 
@@ -110,8 +110,8 @@ class VectorStore:
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:k]
 
-    def search_memory(self, account_id: int, query: str, k: int = 5) -> List[Tuple[MemoryChunk, float]]:
-        query_vec = self._get_embedding(query)
+    async def search_memory(self, account_id: int, query: str, k: int = 5) -> List[Tuple[MemoryChunk, float]]:
+        query_vec = await self._get_embedding(query)
         if query_vec is None:
             return []
 
@@ -131,22 +131,22 @@ class VectorStore:
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:k]
 
-    def build_account_memory(self, account_id: int) -> None:
+    async def build_account_memory(self, account_id: int) -> None:
         with SessionLocal() as db:
             posts = db.query(PostHistory).filter(
                 PostHistory.account_id == account_id,
                 PostHistory.embedding.is_(None)
             ).limit(50).all()
             for post in posts:
-                vec = self._get_embedding(post.content)
+                vec = await self._get_embedding(post.content)
                 if vec is not None:
                     post.embedding = json.dumps(vec.tolist())
             db.commit()
 
 
-def top_k_similar_posts(account_id: int, query: str, k: int = 3) -> List[PostHistory]:
+async def top_k_similar_posts(account_id: int, query: str, k: int = 3) -> List[PostHistory]:
     store = VectorStore()
-    results = store.search_similar_posts(account_id, query, k=k)
+    results = await store.search_similar_posts(account_id, query, k=k)
     return [post for post, _ in results]
 
 

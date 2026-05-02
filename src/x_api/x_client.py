@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import requests
+import aiohttp
 import json
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -43,7 +43,7 @@ class XClient:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
         return headers
 
-    def post_tweet(self, text: str, reply_to: str | None = None, media_ids: List[str] | None = None) -> Dict:
+    async def post_tweet(self, text: str, reply_to: str | None = None, media_ids: List[str] | None = None) -> Dict:
         if not self.bearer_token:
             return {"ok": False, "error": "No bearer token available"}
 
@@ -55,19 +55,22 @@ class XClient:
             payload["media"] = {"media_ids": media_ids}
 
         try:
-            resp = requests.post(url, json=payload, headers=self._headers(), timeout=15)
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                tweet_id = data.get("data", {}).get("id")
-                logger.info("Tweet posted successfully: %s", tweet_id)
-                return {"ok": True, "data": data, "tweet_id": tweet_id}
-            logger.error("Tweet failed: %s - %s", resp.status_code, resp.text)
-            return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload, headers=self._headers()) as resp:
+                    if resp.status in (200, 201):
+                        data = await resp.json()
+                        tweet_id = data.get("data", {}).get("id")
+                        logger.info("Tweet posted successfully: %s", tweet_id)
+                        return {"ok": True, "data": data, "tweet_id": tweet_id}
+                    text_body = await resp.text()
+                    logger.error("Tweet failed: %s - %s", resp.status, text_body)
+                    return {"ok": False, "error": f"HTTP {resp.status}: {text_body}"}
         except Exception as e:
             log_exception("X API post_tweet failed", e, account_id=self.account.id, platform="X")
             return {"ok": False, "error": str(e), "error_type": type(e).__name__}
 
-    def get_user_tweets(self, user_id: str, max_results: int = 100) -> List[Dict]:
+    async def get_user_tweets(self, user_id: str, max_results: int = 100) -> List[Dict]:
         if not self.bearer_token:
             logger.error("No bearer token for get_user_tweets")
             return []
@@ -87,35 +90,40 @@ class XClient:
                 params["pagination_token"] = pagination_token
 
             try:
-                resp = requests.get(url, params=params, headers=self._headers(), timeout=15)
-                if resp.status_code != 200:
-                    logger.error("Failed to fetch tweets: %s", resp.text)
-                    break
-                data = resp.json()
-                batch = data.get("data", [])
-                tweets.extend(batch)
-                pagination_token = data.get("meta", {}).get("next_token")
-                if not pagination_token or not batch:
-                    break
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, params=params, headers=self._headers()) as resp:
+                        if resp.status != 200:
+                            text_body = await resp.text()
+                            logger.error("Failed to fetch tweets: %s", text_body)
+                            break
+                        data = await resp.json()
+                        batch = data.get("data", [])
+                        tweets.extend(batch)
+                        pagination_token = data.get("meta", {}).get("next_token")
+                        if not pagination_token or not batch:
+                            break
             except Exception as e:
                 log_exception("X API get_user_tweets failed", e, account_id=self.account.id, user_id=user_id)
                 break
 
         return tweets[:max_results]
 
-    def get_user_by_username(self, username: str) -> Optional[Dict]:
+    async def get_user_by_username(self, username: str) -> Optional[Dict]:
         if not self.bearer_token:
             return None
         url = f"{self.BASE_URL}/users/by/username/{username}"
         try:
-            resp = requests.get(url, headers=self._headers(), timeout=15)
-            if resp.status_code == 200:
-                return resp.json().get("data")
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=self._headers()) as resp:
+                    if resp.status == 200:
+                        return (await resp.json()).get("data")
         except Exception as e:
             log_exception("X API get_user_by_username failed", e, username=username)
         return None
 
-    def upload_media(self, media_path: str) -> Optional[str]:
+    async def upload_media(self, media_path: str) -> Optional[str]:
         if not self.api_key or not self.api_secret:
             logger.error("Media upload requires API key/secret (OAuth 1.0a)")
             return None
@@ -128,6 +136,7 @@ class XClient:
 
         try:
             from requests_oauthlib import OAuth1
+            import requests
             auth = OAuth1(self.api_key, self.api_secret, access_token, access_token_secret)
             url = f"{self.UPLOAD_URL}/media/upload.json"
 
@@ -148,14 +157,14 @@ class XClient:
             return None
 
 
-def post_tweet(account_id: int, content: str, reply_to: str | None = None) -> Dict:
+async def post_tweet(account_id: int, content: str, reply_to: str | None = None) -> Dict:
     with ErrorContext("post_tweet", account_id=account_id, content_len=len(content)):
         with SessionLocal() as db:
             account = db.get(Account, account_id)
             if not account:
                 return {"ok": False, "error": "Account not found"}
             client = XClient(account)
-            result = client.post_tweet(content, reply_to=reply_to)
+            result = await client.post_tweet(content, reply_to=reply_to)
             if result.get("ok"):
                 post = PostHistory(
                     account_id=account.id,
@@ -174,7 +183,7 @@ def post_tweet(account_id: int, content: str, reply_to: str | None = None) -> Di
             return result
 
 
-def fetch_user_history(account_id: int, max_results: int = 100) -> Dict:
+async def fetch_user_history(account_id: int, max_results: int = 100) -> Dict:
     with ErrorContext("fetch_user_history", account_id=account_id, max_results=max_results):
         with SessionLocal() as db:
             account = db.get(Account, account_id)
@@ -186,12 +195,12 @@ def fetch_user_history(account_id: int, max_results: int = 100) -> Dict:
             if not username:
                 return {"ok": False, "error": "Account username not set"}
 
-            user = client.get_user_by_username(username)
+            user = await client.get_user_by_username(username)
             if not user:
                 return {"ok": False, "error": f"Could not find user @{username}"}
 
             user_id = user.get("id")
-            tweets = client.get_user_tweets(user_id, max_results=max_results)
+            tweets = await client.get_user_tweets(user_id, max_results=max_results)
 
             imported = 0
             for tweet in tweets:

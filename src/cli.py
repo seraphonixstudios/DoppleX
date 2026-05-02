@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import click
 import functools
+import inspect
 import sys
 import os
 
@@ -52,16 +54,24 @@ def _handle_command_error(ctx, operation, exc):
     ctx.exit(1)
 
 def command_wrapper(operation: str):
-    """Decorator to wrap CLI commands with error handling."""
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            ctx = click.get_current_context()
-            try:
-                return f(*args, **kwargs)
-            except Exception as exc:
-                _handle_command_error(ctx, operation, exc)
-        return wrapper
+    """Decorator to wrap CLI commands with error handling.
+    
+    Must be applied AFTER @cli.command() so it can patch the Click Command's callback.
+    """
+    def decorator(cmd):
+        original_callback = cmd.callback
+        is_async = inspect.iscoroutinefunction(original_callback)
+
+        if is_async:
+            @functools.wraps(original_callback)
+            def sync_wrapper(*args, **kwargs):
+                ctx = click.get_current_context()
+                try:
+                    return asyncio.run(original_callback(*args, **kwargs))
+                except Exception as exc:
+                    _handle_command_error(ctx, operation, exc)
+            cmd.callback = sync_wrapper
+        return cmd
     return decorator
 
 @click.group()
@@ -166,10 +176,10 @@ def list_accounts():
 @click.option('--account-id', type=int, required=True)
 @click.option('--topic', default='', help='Topic hint')
 @click.option('--mood', default='', help='Mood')
-def generate(account_id, topic, mood):
+async def generate(account_id, topic, mood):
     """Generate a post for an account"""
     gen = ContentGenerator()
-    content = gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
+    content = await gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
     click.echo(content)
 
 
@@ -177,10 +187,10 @@ def generate(account_id, topic, mood):
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.argument('original-content')
-def regenerate(account_id, original_content):
+async def regenerate(account_id, original_content):
     """Regenerate a variation of existing content"""
     gen = ContentGenerator()
-    content = gen.regenerate_variation(account_id, original_content)
+    content = await gen.regenerate_variation(account_id, original_content)
     click.echo(content)
 
 
@@ -189,7 +199,7 @@ def regenerate(account_id, original_content):
 @click.option('--account-id', type=int, required=True)
 @click.option('--topic', default='', help='Topic hint')
 @click.option('--mood', default='', help='Mood')
-def queue_content(account_id, topic, mood):
+async def queue_content(account_id, topic, mood):
     """Generate content and add to queue as draft"""
     pipe = PipelineEngine()
     item = pipe.queue_content(
@@ -202,7 +212,7 @@ def queue_content(account_id, topic, mood):
     queue_id = item.id
     # Generate now
     gen = ContentGenerator()
-    content = gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
+    content = await gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
     with SessionLocal() as db:
         item = db.get(ContentQueue, queue_id)
         item.content = content
@@ -217,11 +227,11 @@ def queue_content(account_id, topic, mood):
 @click.option('--topics', required=True, help='Comma-separated topics')
 @click.option('--count', type=int, default=1, help='Posts per topic')
 @click.option('--platform', default='X', help='Target platform')
-def bulk_generate(account_id, topics, count, platform):
+async def bulk_generate(account_id, topics, count, platform):
     """Generate multiple posts across topics"""
     pipe = PipelineEngine()
     topic_list = [t.strip() for t in topics.split(',')]
-    items = pipe.bulk_generate(
+    items = await pipe.bulk_generate(
         account_id=account_id,
         topics=topic_list,
         count_per_topic=count,
@@ -237,10 +247,10 @@ def bulk_generate(account_id, topics, count, platform):
 @command_wrapper("analyze_style")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
-def analyze_style(account_id):
+async def analyze_style(account_id):
     """Analyze and learn writing style"""
     sl = StyleLearner()
-    profile = sl.analyze_account(account_id)
+    profile = await sl.analyze_account(account_id)
     click.echo(f"Style analyzed for account {account_id}")
     click.echo(f"Tone: {profile.tone}")
     click.echo(f"Avg length: {profile.avg_post_length}")
@@ -250,9 +260,9 @@ def analyze_style(account_id):
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--max-results', type=int, default=100)
-def scrape_x(account_id, max_results):
+async def scrape_x(account_id, max_results):
     """Scrape X/Twitter history"""
-    result = scrape_x_history(account_id, max_results)
+    result = await scrape_x_history(account_id, max_results)
     if result.get('ok'):
         click.echo(f"Imported {result['imported']} posts")
     else:
@@ -263,9 +273,9 @@ def scrape_x(account_id, max_results):
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--max-videos', type=int, default=50)
-def scrape_tiktok(account_id, max_videos):
+async def scrape_tiktok(account_id, max_videos):
     """Scrape TikTok history"""
-    result = scrape_tiktok_history(account_id, max_videos)
+    result = await scrape_tiktok_history(account_id, max_videos)
     if result.get('ok'):
         click.echo(f"Imported {result['imported']} videos")
     else:
@@ -277,10 +287,10 @@ def scrape_tiktok(account_id, max_videos):
 @click.option('--account-id', type=int, required=True)
 @click.option('--topic', default='', help='Topic hint')
 @click.option('--mood', default='', help='Mood')
-def full_pipeline(account_id, topic, mood):
+async def full_pipeline(account_id, topic, mood):
     """Full pipeline: scrape → analyze → generate → queue"""
     pipe = PipelineEngine()
-    result = pipe.scrape_and_generate(account_id, topic=topic, mood=mood, auto_queue=True)
+    result = await pipe.scrape_and_generate(account_id, topic=topic, mood=mood, auto_queue=True)
     if result.get('ok'):
         click.echo(f"Scraped {result['scraped']} posts, style analyzed: {result['analyzed']}")
         click.echo(f"Generated ({len(result.get('content', ''))} chars):")
@@ -298,12 +308,12 @@ def full_pipeline(account_id, topic, mood):
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.argument('content')
-def post_x(account_id, content):
+async def post_x(account_id, content):
     """Post to X immediately"""
     if settings.use_dry_run:
         click.echo(f"[DRY RUN] Would post to X: {content[:80]}...")
         return
-    result = post_tweet(account_id, content)
+    result = await post_tweet(account_id, content)
     if result.get('ok'):
         click.echo(f"Posted: {result.get('tweet_id')}")
     else:
@@ -315,12 +325,12 @@ def post_x(account_id, content):
 @click.option('--account-id', type=int, required=True)
 @click.option('--video-path', required=True)
 @click.argument('caption')
-def post_tiktok(account_id, video_path, caption):
+async def post_tiktok(account_id, video_path, caption):
     """Post video to TikTok"""
     if settings.use_dry_run:
         click.echo(f"[DRY RUN] Would post to TikTok: {caption[:80]}...")
         return
-    result = upload_video(account_id, video_path, caption)
+    result = await upload_video(account_id, video_path, caption)
     if result.get('ok'):
         click.echo("Upload completed")
     else:
@@ -334,14 +344,14 @@ def post_tiktok(account_id, video_path, caption):
 @click.option('--video-path', help='Video for TikTok')
 @click.option('--date', help='Schedule date (YYYY-MM-DD HH:MM)')
 @click.argument('content')
-def cross_post(x_account_id, tiktok_account_id, video_path, date, content):
+async def cross_post(x_account_id, tiktok_account_id, video_path, date, content):
     """Post to both X and TikTok simultaneously"""
     pipe = PipelineEngine()
     schedule_at = None
     if date:
         from datetime import datetime
         schedule_at = datetime.strptime(date, '%Y-%m-%d %H:%M')
-    result = pipe.cross_post(x_account_id, tiktok_account_id, content, video_path, schedule_at)
+    result = await pipe.cross_post(x_account_id, tiktok_account_id, content, video_path, schedule_at)
     click.echo(f"X: {result['x']}")
     click.echo(f"TikTok: {result['tiktok']}")
 
@@ -422,7 +432,7 @@ def retry_failed(account_id):
 @click.option('--mood', default='', help='Mood')
 @click.option('--date', required=True, help='Schedule date (YYYY-MM-DD HH:MM)')
 @click.option('--media', help='Media path (for TikTok)')
-def pipeline(account_id, topic, mood, date, media):
+async def pipeline(account_id, topic, mood, date, media):
     """Full pipeline: generate content + schedule it for posting"""
     from datetime import datetime
     dt = datetime.strptime(date, '%Y-%m-%d %H:%M')
@@ -431,7 +441,7 @@ def pipeline(account_id, topic, mood, date, media):
         sys.exit(1)
 
     gen = ContentGenerator()
-    content = gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
+    content = await gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
     click.echo(f"Generated content ({len(content)} chars):")
     click.echo(content)
     click.echo()
@@ -474,10 +484,10 @@ def queue_approve(queue_id):
 @command_wrapper("queue_publish")
 @cli.command()
 @click.option('--queue-id', type=int, required=True)
-def queue_publish(queue_id):
+async def queue_publish(queue_id):
     """Publish a queued item immediately"""
     pipe = PipelineEngine()
-    result = pipe.publish_queued(queue_id)
+    result = await pipe.publish_queued(queue_id)
     if result.get('ok'):
         click.echo(f"Published item {queue_id}")
     else:
@@ -501,7 +511,7 @@ def queue_delete(queue_id):
 @command_wrapper("reply_bot_check")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
-def reply_bot_check(account_id):
+async def reply_bot_check(account_id):
     """Run reply bot once for an account"""
     from platforms.x_reply_bot import XReplyBot
     with SessionLocal() as db:
@@ -510,7 +520,7 @@ def reply_bot_check(account_id):
         click.echo("Account not found")
         sys.exit(1)
     bot = XReplyBot(acc)
-    result = bot.run_once()
+    result = await bot.run_once()
     if result.get('ok'):
         click.echo(f"Checked {result.get('mentions_checked', 0)} mentions, replied to {result.get('replied', 0)}")
     else:
@@ -573,7 +583,7 @@ def status():
     """Show system status (Ollama, accounts, scheduled posts, queue)"""
     from brain.ollama_bridge import OllamaBridge
     bridge = OllamaBridge(settings.ollama_url)
-    ollama_ok = bridge.is_available()
+    ollama_ok = asyncio.run(bridge.is_available())
     click.echo(f"Ollama: {'connected' if ollama_ok else 'offline'} ({settings.ollama_url})")
     click.echo(f"Model: {settings.ollama_model}")
     click.echo(f"Embedding: {settings.embedding_model}")

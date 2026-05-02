@@ -10,6 +10,7 @@ from db.database import SessionLocal
 from brain.ollama_bridge import OllamaBridge
 from config.settings import load_settings
 from utils.logger import get_logger
+from utils.error_handler import log_exception
 
 logger = get_logger("you2.style")
 settings = load_settings()
@@ -20,7 +21,7 @@ class StyleLearner:
         self.ollama = OllamaBridge(ollama_base_url or settings.ollama_url)
         self.model = settings.ollama_model
 
-    def analyze_account(self, account_id: int, force: bool = False) -> StyleProfile:
+    async def analyze_account(self, account_id: int, force: bool = False) -> StyleProfile:
         with SessionLocal() as db:
             account = db.get(Account, account_id)
             if not account:
@@ -43,7 +44,7 @@ class StyleLearner:
                 return profile
 
             texts = [p.content for p in posts if p.content]
-            style_data = self._extract_style(texts)
+            style_data = await self._extract_style(texts)
 
             profile.profile_json = json.dumps(style_data, ensure_ascii=False)
             profile.style_summary = style_data.get("summary", "")
@@ -76,7 +77,7 @@ class StyleLearner:
             logger.info("Style analysis complete for account %d", account_id)
             return profile
 
-    def _extract_style(self, texts: List[str]) -> Dict:
+    async def _extract_style(self, texts: List[str]) -> Dict:
         if not texts:
             return {}
 
@@ -102,7 +103,7 @@ class StyleLearner:
         summary = ""
         topics = []
 
-        if self.ollama.is_available() and len(texts) >= 3:
+        if await self.ollama.is_available() and len(texts) >= 3:
             sample = "\n---\n".join(texts[:20])
             analysis_prompt = (
                 f"Analyze the following social media posts and describe the writing style. "
@@ -110,7 +111,7 @@ class StyleLearner:
                 f"summary (2-3 sentence description of the writing style).\n\nPosts:\n{sample}\n\nJSON:"
             )
             try:
-                response = self.ollama.generate(analysis_prompt, model=self.model, temperature=0.3, max_tokens=512)
+                response = await self.ollama.generate(analysis_prompt, model=self.model, temperature=0.3, max_tokens=512)
                 if response:
                     parsed = self._extract_json(response)
                     tone = parsed.get("tone", "")

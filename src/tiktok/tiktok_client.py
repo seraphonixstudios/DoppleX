@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import logging
@@ -189,7 +190,7 @@ class TikTokClient:
         return videos[:max_videos]
 
 
-def upload_video(account_id: int, video_path: str, caption: str, hashtags: List[str] | None = None, dry_run: bool = False) -> Dict:
+async def upload_video(account_id: int, video_path: str, caption: str, hashtags: List[str] | None = None, dry_run: bool = False) -> Dict:
     with ErrorContext("upload_video", account_id=account_id, platform="TikTok", video_path=video_path):
         if dry_run:
             return {"ok": True, "info": "dry_run"}
@@ -199,7 +200,8 @@ def upload_video(account_id: int, video_path: str, caption: str, hashtags: List[
                 return {"ok": False, "error": "Account not found"}
 
             client = TikTokClient(account)
-            result = client.upload_video(video_path, caption, hashtags)
+            # Playwright is sync - run in thread pool
+            result = await asyncio.to_thread(client.upload_video, video_path, caption, hashtags)
 
             if result.get("ok"):
                 post = PostHistory(
@@ -219,7 +221,7 @@ def upload_video(account_id: int, video_path: str, caption: str, hashtags: List[
             return result
 
 
-def scrape_tiktok_history(account_id: int, max_videos: int = 50) -> Dict:
+async def scrape_tiktok_history(account_id: int, max_videos: int = 50) -> Dict:
     with ErrorContext("scrape_tiktok_history", account_id=account_id, max_videos=max_videos):
         with SessionLocal() as db:
             account = db.get(Account, account_id)
@@ -229,7 +231,8 @@ def scrape_tiktok_history(account_id: int, max_videos: int = 50) -> Dict:
                 return {"ok": False, "error": "Account username not set"}
 
             client = TikTokClient(account)
-            videos = client.get_user_videos(account.username, max_videos)
+            # Playwright is sync - run in thread pool
+            videos = await asyncio.to_thread(client.get_user_videos, account.username, max_videos)
 
             imported = 0
             for vid in videos:

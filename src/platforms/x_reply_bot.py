@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import aiohttp
 import json
-import requests
 from typing import List, Dict, Optional
 
 from models import Account, PostHistory
@@ -23,7 +23,7 @@ class XReplyBot:
         self.client = XClient(account)
         self.brain = BrainEngine()
 
-    def fetch_mentions(self, max_results: int = 20) -> List[Dict]:
+    async def fetch_mentions(self, max_results: int = 20) -> List[Dict]:
         """Fetch recent mentions for this account."""
         with ErrorContext("fetch_mentions", account_id=self.account.id):
             if not self.account.username:
@@ -31,7 +31,7 @@ class XReplyBot:
                 return []
 
             # Get user ID first
-            user = self.client.get_user_by_username(self.account.username)
+            user = await self.client.get_user_by_username(self.account.username)
             if not user:
                 logger.error("Could not resolve user ID for @%s", self.account.username)
                 return []
@@ -53,27 +53,30 @@ class XReplyBot:
                 params["since_id"] = self.account.last_mention_id
 
             try:
-                resp = requests.get(url, params=params, headers=self.client._headers(), timeout=15)
-                if resp.status_code != 200:
-                    logger.error("Mentions fetch failed: %s", resp.text)
-                    return []
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, params=params, headers=self.client._headers()) as resp:
+                        if resp.status != 200:
+                            text_body = await resp.text()
+                            logger.error("Mentions fetch failed: %s", text_body)
+                            return []
 
-                data = resp.json()
-                mentions = data.get("data", [])
-                users = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
+                        data = await resp.json()
+                        mentions = data.get("data", [])
+                        users = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
 
-                # Enrich with author username
-                for m in mentions:
-                    author_id = m.get("author_id")
-                    if author_id and author_id in users:
-                        m["author_username"] = users[author_id].get("username", "unknown")
+                        # Enrich with author username
+                        for m in mentions:
+                            author_id = m.get("author_id")
+                            if author_id and author_id in users:
+                                m["author_username"] = users[author_id].get("username", "unknown")
 
-                return mentions
+                        return mentions
             except Exception as e:
                 log_exception("Failed to fetch mentions", e, account_id=self.account.id)
                 return []
 
-    def generate_reply(self, mention_text: str, author_username: str) -> str:
+    async def generate_reply(self, mention_text: str, author_username: str) -> str:
         """Generate a reply in the user's voice."""
         with ErrorContext("generate_reply", account_id=self.account.id):
             prompt = (
@@ -83,12 +86,12 @@ class XReplyBot:
                 f"Don't be overly formal. Match your usual style."
             )
             try:
-                return self.brain.generate_reply(self.account.id, prompt, platform="X")
+                return await self.brain.generate_reply(self.account.id, prompt, platform="X")
             except Exception as e:
                 log_exception("Reply generation failed", e, account_id=self.account.id)
                 return "Thanks for the mention!"
 
-    def reply_to_mention(self, mention: Dict) -> Dict:
+    async def reply_to_mention(self, mention: Dict) -> Dict:
         """Generate and post a reply to a single mention."""
         with ErrorContext("reply_to_mention", account_id=self.account.id):
             tweet_id = mention.get("id")
@@ -108,12 +111,12 @@ class XReplyBot:
                     return {"ok": False, "error": "Already replied to this mention"}
 
             # Generate reply
-            reply_text = self.generate_reply(mention_text, author)
+            reply_text = await self.generate_reply(mention_text, author)
             if not reply_text:
                 return {"ok": False, "error": "Reply generation failed"}
 
             # Post reply
-            result = self.client.post_tweet(reply_text, reply_to=tweet_id)
+            result = await self.client.post_tweet(reply_text, reply_to=tweet_id)
             if result.get("ok"):
                 # Store in history
                 with SessionLocal() as db:
@@ -145,13 +148,13 @@ class XReplyBot:
 
             return result
 
-    def run_once(self) -> Dict:
+    async def run_once(self) -> Dict:
         """Check mentions and reply to all new ones."""
         with ErrorContext("reply_bot_run_once", account_id=self.account.id):
             if not self.account.reply_bot_enabled:
                 return {"ok": False, "error": "Reply bot disabled"}
 
-            mentions = self.fetch_mentions()
+            mentions = await self.fetch_mentions()
             if not mentions:
                 return {"ok": True, "replied": 0, "info": "No new mentions"}
 
@@ -162,7 +165,7 @@ class XReplyBot:
                 if author == (self.account.username or "").lower():
                     continue
 
-                res = self.reply_to_mention(mention)
+                res = await self.reply_to_mention(mention)
                 if res.get("ok"):
                     replied += 1
 

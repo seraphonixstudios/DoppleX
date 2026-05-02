@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 import threading
@@ -83,7 +84,7 @@ class PipelineEngine:
                 log_action("content_approved", account_id=item.account_id, status="success")
                 return True
 
-    def publish_queued(self, queue_id: int) -> Dict:
+    async def publish_queued(self, queue_id: int) -> Dict:
         """Publish a queued item immediately."""
         with ErrorContext("publish_queued", queue_id=queue_id):
             with SessionLocal() as db:
@@ -98,7 +99,7 @@ class PipelineEngine:
                     db.commit()
                     return {"ok": False, "error": "Account not found or inactive"}
 
-                result = self._publish_to_platform(account, item)
+                result = await self._publish_to_platform(account, item)
 
                 if result.get("ok"):
                     item.status = "published"
@@ -113,7 +114,7 @@ class PipelineEngine:
                 db.commit()
                 return result
 
-    def _publish_to_platform(self, account: Account, item: ContentQueue) -> Dict:
+    async def _publish_to_platform(self, account: Account, item: ContentQueue) -> Dict:
         """Publish to the appropriate platform(s)."""
         if settings.use_dry_run:
             logger.info("[DRY RUN] Would publish to %s: %s", item.platform, item.content[:80])
@@ -121,19 +122,19 @@ class PipelineEngine:
 
         if item.platform == "cross":
             # Cross-post to both X and TikTok
-            x_result = post_tweet(account.id, item.content) if account.platform == "X" else {"ok": False, "error": "Not an X account"}
-            tiktok_result = upload_video(account.id, item.media_path or "", item.content) if account.platform == "TikTok" else {"ok": False, "error": "Not a TikTok account"}
+            x_result = await post_tweet(account.id, item.content) if account.platform == "X" else {"ok": False, "error": "Not an X account"}
+            tiktok_result = await upload_video(account.id, item.media_path or "", item.content) if account.platform == "TikTok" else {"ok": False, "error": "Not a TikTok account"}
             # If we have a cross-post setup, we'd need two accounts. For now, return whichever succeeded.
             if x_result.get("ok"):
                 return x_result
             return tiktok_result
 
         if item.platform == "X":
-            return post_tweet(account.id, item.content)
+            return await post_tweet(account.id, item.content)
         elif item.platform == "TikTok":
             if not item.media_path:
                 return {"ok": False, "error": "TikTok posts require a video file"}
-            return upload_video(account.id, item.media_path, item.content)
+            return await upload_video(account.id, item.media_path, item.content)
 
         return {"ok": False, "error": f"Unknown platform: {item.platform}"}
 
@@ -164,7 +165,7 @@ class PipelineEngine:
 
     # ───────────────────────── Bulk Generation ─────────────────────────
 
-    def bulk_generate(
+    async def bulk_generate(
         self,
         account_id: int,
         topics: List[str],
@@ -183,7 +184,7 @@ class PipelineEngine:
                 for _ in range(count_per_topic):
                     mood = random.choice(moods)
                     try:
-                        content = self.generator.generate_and_store(
+                        content = await self.generator.generate_and_store(
                             account_id,
                             topic_hint=topic,
                             mood=mood,
@@ -290,7 +291,7 @@ class PipelineEngine:
 
     # ───────────────────────── Scrape → Generate Pipeline ─────────────────────────
 
-    def scrape_and_generate(
+    async def scrape_and_generate(
         self,
         account_id: int,
         topic: str = "",
@@ -308,9 +309,9 @@ class PipelineEngine:
 
             # 1. Scrape history
             if account.platform == "X":
-                scrape_result = scrape_x_history(account_id, max_results=50)
+                scrape_result = await scrape_x_history(account_id, max_results=50)
             elif account.platform == "TikTok":
-                scrape_result = scrape_tiktok_history(account_id, max_videos=30)
+                scrape_result = await scrape_tiktok_history(account_id, max_videos=30)
             else:
                 return {"ok": False, "error": "Unknown platform"}
 
@@ -319,14 +320,14 @@ class PipelineEngine:
 
             # 2. Analyze style
             try:
-                profile = self.style_learner.analyze_account(account_id)
+                profile = await self.style_learner.analyze_account(account_id)
                 results["analyzed"] = True
             except Exception as e:
                 log_exception("Style analysis failed in pipeline", e, account_id=account_id)
 
             # 3. Generate content
             try:
-                content = self.generator.generate_and_store(
+                content = await self.generator.generate_and_store(
                     account_id,
                     topic_hint=topic,
                     mood=mood,
@@ -375,13 +376,13 @@ class PipelineEngine:
         """Background loop: process approved items and retry failures."""
         while self._worker_running:
             try:
-                self._process_approved_items()
+                asyncio.run(self._process_approved_items())
                 self.retry_failed(max_age_hours=24)
             except Exception as e:
                 log_exception("Pipeline worker error", e)
             time.sleep(interval_seconds)
 
-    def _process_approved_items(self, batch_size: int = 5):
+    async def _process_approved_items(self, batch_size: int = 5):
         """Publish approved items that are due."""
         with SessionLocal() as db:
             items = db.query(ContentQueue).filter(
@@ -395,13 +396,13 @@ class PipelineEngine:
                 item.status = "queued"
                 db.commit()
 
-                result = self.publish_queued(item.id)
+                result = await self.publish_queued(item.id)
                 if not result.get("ok") and not result.get("dry_run"):
                     logger.warning("Queue publish failed for item %d: %s", item.id, result.get("error"))
 
     # ───────────────────────── Cross-Post ─────────────────────────
 
-    def cross_post(
+    async def cross_post(
         self,
         x_account_id: int,
         tiktok_account_id: int,
@@ -424,9 +425,9 @@ class PipelineEngine:
             else:
                 # Post immediately
                 if not settings.use_dry_run:
-                    results["x"] = post_tweet(x_account_id, content)
+                    results["x"] = await post_tweet(x_account_id, content)
                     if video_path:
-                        results["tiktok"] = upload_video(tiktok_account_id, video_path, content)
+                        results["tiktok"] = await upload_video(tiktok_account_id, video_path, content)
                 else:
                     results["x"] = {"ok": True, "dry_run": True}
                     results["tiktok"] = {"ok": True, "dry_run": True}

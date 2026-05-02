@@ -35,11 +35,21 @@ def test_full_account_lifecycle():
     # 3. Generate content (mock Ollama to avoid network dependency)
     from brain.ollama_bridge import OllamaBridge
     original_chat = OllamaBridge.chat
-    OllamaBridge.chat = lambda self, messages, model=None, temperature=None, max_tokens=None: "E2E generated content!"
     original_generate = OllamaBridge.generate
-    OllamaBridge.generate = lambda self, prompt, model=None, temperature=None, max_tokens=None: '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
     original_embed = OllamaBridge.embeddings
-    OllamaBridge.embeddings = lambda self, text, model=None: [0.1] * 768
+
+    async def mock_chat(self, messages, model=None, temperature=None, max_tokens=None):
+        return "E2E generated content!"
+
+    async def mock_generate(self, prompt, model=None, temperature=None, max_tokens=None):
+        return '{"tone": "casual", "topics": ["test"], "summary": "test style"}'
+
+    async def mock_embed(self, text, model=None):
+        return [0.1] * 768
+
+    OllamaBridge.chat = mock_chat
+    OllamaBridge.generate = mock_generate
+    OllamaBridge.embeddings = mock_embed
 
     try:
         result = runner.invoke(cli, [

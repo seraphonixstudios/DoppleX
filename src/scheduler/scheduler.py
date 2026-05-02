@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -58,7 +59,7 @@ class You2Scheduler:
             pass
 
         self._scheduler.add_job(
-            self._publish,
+            self._publish_sync_wrapper,
             DateTrigger(run_date=scheduled_post.scheduled_at),
             id=job_id,
             args=[scheduled_post.id],
@@ -99,7 +100,14 @@ class You2Scheduler:
         log_action("post_cancelled", account_id=account_id, status="success")
         return True
 
-    def _publish(self, scheduled_post_id: int):
+    def _publish_sync_wrapper(self, scheduled_post_id: int):
+        """Sync wrapper for APScheduler threads to run async publish."""
+        try:
+            asyncio.run(self._publish(scheduled_post_id))
+        except Exception as e:
+            log_exception("Scheduled publish wrapper failed", e, post_id=scheduled_post_id)
+
+    async def _publish(self, scheduled_post_id: int):
         with SessionLocal() as db:
             post = db.get(ScheduledPost, scheduled_post_id)
             if not post or post.status != "scheduled":
@@ -115,10 +123,10 @@ class You2Scheduler:
             with ErrorContext("scheduler_publish", account_id=account.id, platform=account.platform, post_id=scheduled_post_id):
                 try:
                     if account.platform == "X":
-                        result = post_tweet(account.id, post.content)
+                        result = await post_tweet(account.id, post.content)
                     elif account.platform == "TikTok":
                         if post.media_path:
-                            result = upload_video(account.id, post.media_path, post.content)
+                            result = await upload_video(account.id, post.media_path, post.content)
                         else:
                             result = {"ok": False, "error": "TikTok posts require a video file"}
                     else:
@@ -159,7 +167,7 @@ class You2Scheduler:
             pass
 
         self._scheduler.add_job(
-            self._check_replies,
+            self._check_replies_sync_wrapper,
             "interval",
             minutes=interval_minutes,
             id=job_id,
@@ -176,7 +184,14 @@ class You2Scheduler:
         except Exception:
             pass
 
-    def _check_replies(self, account_id: int):
+    def _check_replies_sync_wrapper(self, account_id: int):
+        """Sync wrapper for APScheduler threads to run async reply check."""
+        try:
+            asyncio.run(self._check_replies(account_id))
+        except Exception as e:
+            log_exception("Reply bot wrapper failed", e, account_id=account_id)
+
+    async def _check_replies(self, account_id: int):
         with SessionLocal() as db:
             account = db.get(Account, account_id)
         if not account or not account.reply_bot_enabled:
@@ -184,7 +199,7 @@ class You2Scheduler:
         with ErrorContext("reply_bot_check", account_id=account_id):
             try:
                 bot = XReplyBot(account)
-                result = bot.run_once()
+                result = await bot.run_once()
                 if result.get("replied", 0) > 0:
                     logger.info("Reply bot: %d replies sent for account %d", result["replied"], account_id)
             except Exception as e:

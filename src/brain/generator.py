@@ -23,13 +23,13 @@ class ContentGenerator:
         self.vector_store = VectorStore(ollama_base_url)
         self.ollama = OllamaBridge(ollama_base_url)
 
-    def generate(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
+    async def generate(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
         with ErrorContext("generator.generate", account_id=account_id, topic_hint=topic_hint, mood=mood):
-            return self.brain.generate_post(account_id, topic_hint=topic_hint, mood=mood)
+            return await self.brain.generate_post(account_id, topic_hint=topic_hint, mood=mood)
 
-    def generate_and_store(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
+    async def generate_and_store(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
         with ErrorContext("generator.generate_and_store", account_id=account_id, topic_hint=topic_hint, mood=mood):
-            content = self.generate(account_id, topic_hint=topic_hint, mood=mood)
+            content = await self.generate(account_id, topic_hint=topic_hint, mood=mood)
             with SessionLocal() as db:
                 account = db.get(Account, account_id)
                 if not account:
@@ -49,18 +49,18 @@ class ContentGenerator:
 
                 # Generate embedding asynchronously in background
                 try:
-                    self.vector_store.store_post_embedding(post.id)
+                    await self.vector_store.store_post_embedding(post.id)
                 except Exception as e:
                     log_exception("Failed to store embedding", e, post_id=post.id, account_id=account.id)
 
                 log_action("content_generated", account_id=account.id, status="success", details=f"length={len(content)}, model={settings.ollama_model}")
             return content
 
-    def generate_reply(self, account_id: int, original_post: str, platform: str = "X") -> str:
+    async def generate_reply(self, account_id: int, original_post: str, platform: str = "X") -> str:
         with ErrorContext("generator.generate_reply", account_id=account_id, platform=platform):
-            return self.brain.generate_reply(account_id, original_post, platform)
+            return await self.brain.generate_reply(account_id, original_post, platform)
 
-    def regenerate_variation(self, account_id: int, original_content: str) -> str:
+    async def regenerate_variation(self, account_id: int, original_content: str) -> str:
         with ErrorContext("generator.regenerate_variation", account_id=account_id):
             with SessionLocal() as db:
                 account = db.get(Account, account_id)
@@ -81,7 +81,7 @@ class ContentGenerator:
                 ]
 
                 try:
-                    content = self.ollama.chat(messages, model=settings.ollama_model, temperature=settings.temperature + 0.1, max_tokens=settings.max_tokens)
+                    content = await self.ollama.chat(messages, model=settings.ollama_model, temperature=settings.temperature + 0.1, max_tokens=settings.max_tokens)
                     return content.strip() if content else original_content
                 except Exception as e:
                     log_exception("Regenerate variation failed", e, account_id=account_id)

@@ -14,6 +14,6 @@ from utils.audit import log_action
 logger = get_logger("you2.x_scraper")
 
 
-def scrape_x_history(account_id: int, max_results: int = 100) -> Dict:
+async def scrape_x_history(account_id: int, max_results: int = 100) -> Dict:
     from x_api.x_client import fetch_user_history
-    return fetch_user_history(account_id, max_results)
+    return await fetch_user_history(account_id, max_results)

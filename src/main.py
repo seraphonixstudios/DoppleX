@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -244,7 +245,7 @@ class You2App:
         def check_ollama():
             while True:
                 try:
-                    available = self.brain.ollama.is_available()
+                    available = asyncio.run(self.brain.ollama.is_available())
                     model = self.settings.ollama_model
                     self.ollama_status.value = f"Ollama: {'connected' if available else 'offline'} ({model})"
                     self.page.update()
@@ -472,19 +473,70 @@ class You2App:
                 account_dd.value = str(accounts[0].id)
             self.page.update()
 
-        def analyze_clicked(_):
+        async def analyze_clicked(_):
             if not account_dd.value:
                 status.value = "Select an account first"
                 self.page.update()
                 return
+            analyze_btn.disabled = True
+            style_spinner.visible = True
             status.value = "Analyzing style... (this may take a minute)"
             self.page.update()
 
-            def _task():
-                try:
-                    profile = self.style_learner.analyze_account(int(account_dd.value))
-                    style = profile.profile_json
-                    style_parsed = json.loads(style) if style else {}
+            try:
+                profile = await self.style_learner.analyze_account(int(account_dd.value))
+                style = profile.profile_json
+                style_parsed = json.loads(style) if style else {}
+                lines = [
+                    f"Tone: {profile.tone or style_parsed.get('tone', 'unknown')}",
+                    f"Topics: {', '.join(json.loads(profile.topics) if profile.topics else style_parsed.get('topics', []))}",
+                    f"Avg Length: {profile.avg_post_length or style_parsed.get('avg_length', 'unknown')} chars",
+                    f"Hashtags: {', '.join(json.loads(profile.common_hashtags) if profile.common_hashtags else style_parsed.get('hashtags', []))}",
+                    f"Summary: {profile.style_summary or style_parsed.get('summary', '')}",
+                ]
+                style_output.value = "\n".join(lines)
+                status.value = "Style analysis complete"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Style analysis failed", e)
+            finally:
+                analyze_btn.disabled = False
+                style_spinner.visible = False
+                self.page.update()
+
+        async def scrape_and_learn_clicked(_):
+            if not account_dd.value:
+                status.value = "Select an account first"
+                self.page.update()
+                return
+            scrape_learn_btn.disabled = True
+            style_spinner.visible = True
+            status.value = "Scraping history and learning style..."
+            self.page.update()
+
+            try:
+                aid = int(account_dd.value)
+                with SessionLocal() as db:
+                    acc = db.get(Account, aid)
+                    if not acc:
+                        status.value = "Account not found"
+                        self.page.update()
+                        return
+
+                if acc.platform == "X":
+                    res = await scrape_x_history(aid, max_results=100)
+                elif acc.platform == "TikTok":
+                    res = await scrape_tiktok_history(aid, max_videos=50)
+                else:
+                    status.value = "Unknown platform"
+                    self.page.update()
+                    return
+
+                if res.get("ok"):
+                    status.value = f"Scraped {res.get('imported', 0)} posts. Analyzing style..."
+                    self.page.update()
+                    profile = await self.style_learner.analyze_account(aid)
+                    style_parsed = json.loads(profile.profile_json) if profile.profile_json else {}
                     lines = [
                         f"Tone: {profile.tone or style_parsed.get('tone', 'unknown')}",
                         f"Topics: {', '.join(json.loads(profile.topics) if profile.topics else style_parsed.get('topics', []))}",
@@ -493,69 +545,26 @@ class You2App:
                         f"Summary: {profile.style_summary or style_parsed.get('summary', '')}",
                     ]
                     style_output.value = "\n".join(lines)
-                    status.value = "Style analysis complete"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Style analysis failed", e)
+                    status.value = f"Scraped {res.get('imported', 0)} posts and analyzed style"
+                else:
+                    status.value = f"Scrape failed: {res.get('error')}"
+            except Exception as e:
+                status.value = f"Scrape failed: {str(e)}"
+                self._show_error("Scrape and learn failed", e)
+            finally:
+                scrape_learn_btn.disabled = False
+                style_spinner.visible = False
                 self.page.update()
-
-            threading.Thread(target=_task, daemon=True).start()
-
-        def scrape_and_learn_clicked(_):
-            if not account_dd.value:
-                status.value = "Select an account first"
-                self.page.update()
-                return
-            status.value = "Scraping history and learning style..."
-            self.page.update()
-
-            def _task():
-                try:
-                    aid = int(account_dd.value)
-                    with SessionLocal() as db:
-                        acc = db.get(Account, aid)
-                        if not acc:
-                            status.value = "Account not found"
-                            self.page.update()
-                            return
-
-                    if acc.platform == "X":
-                        res = scrape_x_history(aid, max_results=100)
-                    elif acc.platform == "TikTok":
-                        res = scrape_tiktok_history(aid, max_videos=50)
-                    else:
-                        status.value = "Unknown platform"
-                        self.page.update()
-                        return
-
-                    if res.get("ok"):
-                        status.value = f"Scraped {res.get('imported', 0)} posts. Analyzing style..."
-                        self.page.update()
-                        profile = self.style_learner.analyze_account(aid)
-                        style_parsed = json.loads(profile.profile_json) if profile.profile_json else {}
-                        lines = [
-                            f"Tone: {profile.tone or style_parsed.get('tone', 'unknown')}",
-                            f"Topics: {', '.join(json.loads(profile.topics) if profile.topics else style_parsed.get('topics', []))}",
-                            f"Avg Length: {profile.avg_post_length or style_parsed.get('avg_length', 'unknown')} chars",
-                            f"Hashtags: {', '.join(json.loads(profile.common_hashtags) if profile.common_hashtags else style_parsed.get('hashtags', []))}",
-                            f"Summary: {profile.style_summary or style_parsed.get('summary', '')}",
-                        ]
-                        style_output.value = "\n".join(lines)
-                        status.value = f"Scraped {res.get('imported', 0)} posts and analyzed style"
-                    else:
-                        status.value = f"Scrape failed: {res.get('error')}"
-                except Exception as e:
-                    status.value = f"Scrape failed: {str(e)}"
-                    self._show_error("Scrape and learn failed", e)
-                self.page.update()
-
-            threading.Thread(target=_task, daemon=True).start()
 
         refresh_accounts()
 
+        analyze_btn = ft.ElevatedButton("Analyze Style", on_click=analyze_clicked)
+        scrape_learn_btn = ft.ElevatedButton("Scrape & Learn", on_click=scrape_and_learn_clicked)
+        style_spinner = ft.ProgressRing(width=16, height=16, visible=False)
+
         self.content_area.content = ft.Column([
             ft.Text("Style Learning", size=24, weight=ft.FontWeight.BOLD),
-            ft.Row([account_dd, ft.ElevatedButton("Analyze Style", on_click=analyze_clicked), ft.ElevatedButton("Scrape & Learn", on_click=scrape_and_learn_clicked)]),
+            ft.Row([account_dd, analyze_btn, scrape_learn_btn, style_spinner]),
             status,
             ft.Text("Style Profile:", weight=ft.FontWeight.BOLD),
             style_output,
@@ -586,87 +595,91 @@ class You2App:
                 account_dd.value = str(accounts[0].id)
             self.page.update()
 
-        def generate_clicked(_):
+        async def generate_clicked(_):
             if not account_dd.value:
                 status.value = "Select an account"
                 self.page.update()
                 return
+            generate_btn.disabled = True
+            generate_spinner.visible = True
             status.value = "Generating..."
             self.page.update()
 
-            def _task():
-                try:
-                    content = self.generator.generate_and_store(
-                        int(account_dd.value),
-                        topic_hint=topic_tf.value or "",
-                        mood=mood_tf.value or "",
-                    )
-                    output_tf.value = content
-                    status.value = f"Generated ({len(content)} chars)"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Content generation failed", e)
+            try:
+                content = await self.generator.generate_and_store(
+                    int(account_dd.value),
+                    topic_hint=topic_tf.value or "",
+                    mood=mood_tf.value or "",
+                )
+                output_tf.value = content
+                status.value = f"Generated ({len(content)} chars)"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Content generation failed", e)
+            finally:
+                generate_btn.disabled = False
+                generate_spinner.visible = False
                 self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
-        def regenerate_clicked(_):
+        async def regenerate_clicked(_):
             if not output_tf.value:
                 status.value = "Generate something first"
                 self.page.update()
                 return
+            regenerate_btn.disabled = True
             status.value = "Regenerating variation..."
             self.page.update()
 
-            def _task():
-                try:
-                    content = self.generator.regenerate_variation(int(account_dd.value), output_tf.value)
-                    output_tf.value = content
-                    status.value = f"Regenerated ({len(content)} chars)"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Regeneration failed", e)
+            try:
+                content = await self.generator.regenerate_variation(int(account_dd.value), output_tf.value)
+                output_tf.value = content
+                status.value = f"Regenerated ({len(content)} chars)"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Regeneration failed", e)
+            finally:
+                regenerate_btn.disabled = False
                 self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
-        def post_now_clicked(_):
+        async def post_now_clicked(_):
             if not account_dd.value or not output_tf.value:
                 status.value = "Select account and generate content first"
                 self.page.update()
                 return
+            post_btn.disabled = True
+            status.value = "Posting..."
+            self.page.update()
 
-            def _task():
-                try:
-                    aid = int(account_dd.value)
-                    with SessionLocal() as db:
-                        acc = db.get(Account, aid)
-                    if not acc:
-                        status.value = "Account not found"
-                        self.page.update()
-                        return
+            try:
+                aid = int(account_dd.value)
+                with SessionLocal() as db:
+                    acc = db.get(Account, aid)
+                if not acc:
+                    status.value = "Account not found"
+                    self.page.update()
+                    return
 
-                    if acc.platform == "X":
-                        res = x_post_text(acc, output_tf.value)
-                    elif acc.platform == "TikTok":
-                        status.value = "TikTok requires a video file. Use the Publish tab."
-                        self.page.update()
-                        return
-                    else:
-                        res = {"ok": False, "error": "Unknown platform"}
+                if acc.platform == "X":
+                    res = await x_post_text(acc, output_tf.value)
+                elif acc.platform == "TikTok":
+                    status.value = "TikTok requires a video file. Use the Publish tab."
+                    self.page.update()
+                    return
+                else:
+                    res = {"ok": False, "error": "Unknown platform"}
 
-                    if res.get("ok"):
-                        status.value = f"Posted to {acc.platform}!"
-                    else:
-                        status.value = f"Post failed: {res.get('error')}"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Post now failed", e)
+                if res.get("ok"):
+                    status.value = f"Posted to {acc.platform}!"
+                else:
+                    status.value = f"Post failed: {res.get('error')}"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Post now failed", e)
+            finally:
+                post_btn.disabled = False
                 self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
-        def generate_image_clicked(_):
+        async def generate_image_clicked(_):
             if not img_prompt_tf.value:
                 img_status.value = "Enter an image prompt"
                 self.page.update()
@@ -674,28 +687,25 @@ class You2App:
             img_status.value = "Generating image... (this may take a minute)"
             self.page.update()
 
-            def _task():
-                try:
-                    gen = ImageGenerator()
-                    if not gen.is_available():
-                        img_status.value = "Stable Diffusion WebUI not running. Start it at http://localhost:7860"
-                        self.page.update()
-                        return
-                    path = gen.generate(img_prompt_tf.value)
-                    if path:
-                        img_preview.src = str(path)
-                        img_path_display.value = str(path)
-                        img_status.value = f"Image saved: {path.name}"
-                    else:
-                        img_status.value = "Image generation failed"
-                except Exception as e:
-                    img_status.value = f"Error: {str(e)}"
-                    self._show_error("Image generation failed", e)
-                self.page.update()
+            try:
+                gen = ImageGenerator()
+                if not gen.is_available():
+                    img_status.value = "Stable Diffusion WebUI not running. Start it at http://localhost:7860"
+                    self.page.update()
+                    return
+                path = gen.generate(img_prompt_tf.value)
+                if path:
+                    img_preview.src = str(path)
+                    img_path_display.value = str(path)
+                    img_status.value = f"Image saved: {path.name}"
+                else:
+                    img_status.value = "Image generation failed"
+            except Exception as e:
+                img_status.value = f"Error: {str(e)}"
+                self._show_error("Image generation failed", e)
+            self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
-        def post_with_image_clicked(_):
+        async def post_with_image_clicked(_):
             if not account_dd.value or not output_tf.value:
                 status.value = "Generate text content first"
                 self.page.update()
@@ -705,44 +715,55 @@ class You2App:
                 self.page.update()
                 return
 
-            def _task():
-                try:
-                    aid = int(account_dd.value)
-                    with SessionLocal() as db:
-                        acc = db.get(Account, aid)
-                    if not acc or acc.platform != "X":
-                        status.value = "Image posts only supported for X currently"
-                        self.page.update()
-                        return
+            post_img_btn.disabled = True
+            status.value = "Posting with image..."
+            self.page.update()
 
-                    client = __import__('x_api.x_client', fromlist=['XClient']).XClient(acc)
-                    media_id = client.upload_media(img_path_display.value)
-                    if not media_id:
-                        status.value = "Image upload failed. Ensure OAuth 1.0a credentials (API key + access token) are set."
-                        self.page.update()
-                        return
+            try:
+                aid = int(account_dd.value)
+                with SessionLocal() as db:
+                    acc = db.get(Account, aid)
+                if not acc or acc.platform != "X":
+                    status.value = "Image posts only supported for X currently"
+                    self.page.update()
+                    return
 
-                    res = client.post_tweet(output_tf.value, media_ids=[media_id])
-                    if res.get("ok"):
-                        status.value = f"Posted to X with image!"
-                    else:
-                        status.value = f"Post failed: {res.get('error')}"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Post with image failed", e)
+                from x_api.x_client import XClient
+                client = XClient(acc)
+                media_id = await client.upload_media(img_path_display.value)
+                if not media_id:
+                    status.value = "Image upload failed. Ensure OAuth 1.0a credentials (API key + access token) are set."
+                    self.page.update()
+                    return
+
+                res = await client.post_tweet(output_tf.value, media_ids=[media_id])
+                if res.get("ok"):
+                    status.value = f"Posted to X with image!"
+                else:
+                    status.value = f"Post failed: {res.get('error')}"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Post with image failed", e)
+            finally:
+                post_img_btn.disabled = False
                 self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
         refresh_accounts()
+
+        generate_btn = ft.ElevatedButton("Generate", on_click=generate_clicked)
+        regenerate_btn = ft.ElevatedButton("Regenerate Variation", on_click=regenerate_clicked)
+        post_btn = ft.ElevatedButton("Post Now", on_click=post_now_clicked)
+        generate_spinner = ft.ProgressRing(width=16, height=16, visible=False)
+        post_img_btn = ft.ElevatedButton("Post with Image", on_click=post_with_image_clicked)
 
         self.content_area.content = ft.Column([
             ft.Text("Content Generation", size=24, weight=ft.FontWeight.BOLD),
             ft.Row([account_dd, topic_tf, mood_tf]),
             ft.Row([
-                ft.ElevatedButton("Generate", on_click=generate_clicked),
-                ft.ElevatedButton("Regenerate Variation", on_click=regenerate_clicked),
-                ft.ElevatedButton("Post Now", on_click=post_now_clicked),
+                generate_btn,
+                generate_spinner,
+                regenerate_btn,
+                post_btn,
             ]),
             status,
             ft.Text("Generated Content:", weight=ft.FontWeight.BOLD),
@@ -752,7 +773,7 @@ class You2App:
             ft.Row([img_prompt_tf]),
             ft.Row([
                 ft.ElevatedButton("Generate Image", on_click=generate_image_clicked),
-                ft.ElevatedButton("Post with Image", on_click=post_with_image_clicked),
+                post_img_btn,
             ]),
             img_status,
             img_path_display,
@@ -884,7 +905,7 @@ class You2App:
                 )
             self.page.update()
 
-        def scrape_clicked(_):
+        async def scrape_clicked(_):
             if not account_dd.value or account_dd.value == "0":
                 status.value = "Select a specific account to scrape"
                 self.page.update()
@@ -892,45 +913,53 @@ class You2App:
             status.value = "Scraping history..."
             self.page.update()
 
-            def _task():
-                try:
-                    aid = int(account_dd.value)
-                    with SessionLocal() as db:
-                        acc = db.get(Account, aid)
-                    if not acc:
-                        status.value = "Account not found"
-                        self.page.update()
-                        return
+            scrape_btn.disabled = True
+            hist_spinner.visible = True
+            status.value = "Scraping history..."
+            self.page.update()
 
-                    if acc.platform == "X":
-                        res = scrape_x_history(aid, max_results=100)
-                    elif acc.platform == "TikTok":
-                        res = scrape_tiktok_history(aid, max_videos=50)
-                    else:
-                        status.value = "Unknown platform"
-                        self.page.update()
-                        return
+            try:
+                aid = int(account_dd.value)
+                with SessionLocal() as db:
+                    acc = db.get(Account, aid)
+                if not acc:
+                    status.value = "Account not found"
+                    self.page.update()
+                    return
 
-                    if res.get("ok"):
-                        status.value = f"Scraped {res.get('imported', 0)} posts"
-                    else:
-                        status.value = f"Scrape failed: {res.get('error')}"
-                    refresh_posts()
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("History scrape failed", e)
+                if acc.platform == "X":
+                    res = await scrape_x_history(aid, max_results=100)
+                elif acc.platform == "TikTok":
+                    res = await scrape_tiktok_history(aid, max_videos=50)
+                else:
+                    status.value = "Unknown platform"
+                    self.page.update()
+                    return
+
+                if res.get("ok"):
+                    status.value = f"Scraped {res.get('imported', 0)} posts"
+                else:
+                    status.value = f"Scrape failed: {res.get('error')}"
+                refresh_posts()
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("History scrape failed", e)
+            finally:
+                scrape_btn.disabled = False
+                hist_spinner.visible = False
                 self.page.update()
-
-            threading.Thread(target=_task, daemon=True).start()
 
         refresh_accounts()
         refresh_posts()
 
         account_dd.on_change = lambda _: refresh_posts()
 
+        scrape_btn = ft.ElevatedButton("Scrape History", on_click=scrape_clicked)
+        hist_spinner = ft.ProgressRing(width=16, height=16, visible=False)
+
         self.content_area.content = ft.Column([
             ft.Text("Post History", size=24, weight=ft.FontWeight.BOLD),
-            ft.Row([account_dd, ft.ElevatedButton("Scrape History", on_click=scrape_clicked)]),
+            ft.Row([account_dd, scrape_btn, hist_spinner]),
             status,
             posts_list,
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -1104,51 +1133,56 @@ class You2App:
             status.value = "Reply bot stopped"
             self.page.update()
 
-        def check_now_clicked(_):
+        async def check_now_clicked(_):
             if not account_dd.value:
                 status.value = "Select an account"
                 self.page.update()
                 return
+            check_btn.disabled = True
+            reply_spinner.visible = True
             status.value = "Checking mentions..."
             self.page.update()
 
-            def _task():
-                try:
-                    aid = int(account_dd.value)
+            try:
+                aid = int(account_dd.value)
+                with SessionLocal() as db:
+                    acc = db.get(Account, aid)
+                if not acc:
+                    status.value = "Account not found"
+                    self.page.update()
+                    return
+
+                bot = XReplyBot(acc)
+                result = await bot.run_once()
+
+                if result.get("ok"):
+                    status.value = f"Checked {result.get('mentions_checked', 0)} mentions, replied to {result.get('replied', 0)}"
+                    # Show recent reply history
                     with SessionLocal() as db:
-                        acc = db.get(Account, aid)
-                    if not acc:
-                        status.value = "Account not found"
-                        self.page.update()
-                        return
-
-                    bot = XReplyBot(acc)
-                    result = bot.run_once()
-
-                    if result.get("ok"):
-                        status.value = f"Checked {result.get('mentions_checked', 0)} mentions, replied to {result.get('replied', 0)}"
-                        # Show recent reply history
-                        with SessionLocal() as db:
-                            replies = db.query(PostHistory).filter(
-                                PostHistory.account_id == aid,
-                                PostHistory.source == "reply_bot"
-                            ).order_by(PostHistory.created_at.desc()).limit(10).all()
-                        reply_log.controls = [
-                            ft.ListTile(
-                                title=ft.Text(r.content[:80] + "...", size=12),
-                                subtitle=ft.Text(f"Reply to @{r.reply_to_username} | {r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}", size=10),
-                            ) for r in replies
-                        ]
-                    else:
-                        status.value = f"Check failed: {result.get('error')}"
-                except Exception as e:
-                    status.value = f"Error: {str(e)}"
-                    self._show_error("Reply bot check failed", e)
+                        replies = db.query(PostHistory).filter(
+                            PostHistory.account_id == aid,
+                            PostHistory.source == "reply_bot"
+                        ).order_by(PostHistory.created_at.desc()).limit(10).all()
+                    reply_log.controls = [
+                        ft.ListTile(
+                            title=ft.Text(r.content[:80] + "...", size=12),
+                            subtitle=ft.Text(f"Reply to @{r.reply_to_username} | {r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else ''}", size=10),
+                        ) for r in replies
+                    ]
+                else:
+                    status.value = f"Check failed: {result.get('error')}"
+            except Exception as e:
+                status.value = f"Error: {str(e)}"
+                self._show_error("Reply bot check failed", e)
+            finally:
+                check_btn.disabled = False
+                reply_spinner.visible = False
                 self.page.update()
 
-            threading.Thread(target=_task, daemon=True).start()
-
         refresh_accounts()
+
+        check_btn = ft.ElevatedButton("Check Now", on_click=check_now_clicked)
+        reply_spinner = ft.ProgressRing(width=16, height=16, visible=False)
 
         self.content_area.content = ft.Column([
             ft.Text("Reply Bot", size=24, weight=ft.FontWeight.BOLD),
@@ -1159,7 +1193,8 @@ class You2App:
                 ft.ElevatedButton("Save Settings", on_click=save_settings_clicked),
                 ft.ElevatedButton("Start Bot", on_click=start_bot_clicked),
                 ft.ElevatedButton("Stop Bot", on_click=stop_bot_clicked),
-                ft.ElevatedButton("Check Now", on_click=check_now_clicked),
+                check_btn,
+                reply_spinner,
             ]),
             status,
             ft.Text("Recent Replies:", weight=ft.FontWeight.BOLD),

@@ -24,7 +24,7 @@ class BrainEngine:
         self.max_tokens = settings.max_tokens
         self.top_k = settings.top_k_memory
 
-    def generate_post(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
+    async def generate_post(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
         with ErrorContext("generate_post", account_id=account_id, topic_hint=topic_hint, mood=mood):
             with SessionLocal() as db:
                 from models import Account, StyleProfile
@@ -46,7 +46,7 @@ class BrainEngine:
                     query = topic_hint or last_posts[0].content if last_posts else ""
                     if query:
                         try:
-                            similar = self.vector_store.search_similar_posts(account_id, query, k=self.top_k)
+                            similar = await self.vector_store.search_similar_posts(account_id, query, k=self.top_k)
                             context_posts = [post for post, score in similar if score > 0.5]
                         except Exception as e:
                             log_exception("RAG search failed in generate_post", e, account_id=account_id)
@@ -55,7 +55,7 @@ class BrainEngine:
                 style_memory = []
                 if style_profile and style_profile.style_summary:
                     try:
-                        mems = self.vector_store.search_memory(account_id, style_profile.style_summary, k=3)
+                        mems = await self.vector_store.search_memory(account_id, style_profile.style_summary, k=3)
                         style_memory = [m for m, score in mems if score > 0.3]
                     except Exception as e:
                         log_exception("Style memory search failed", e, account_id=account_id)
@@ -75,7 +75,7 @@ class BrainEngine:
                 ]
 
                 try:
-                    content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
+                    content = await self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
                     if content:
                         return content.strip()
                 except Exception as e:
@@ -83,7 +83,7 @@ class BrainEngine:
 
                 return self._fallback_style(last_posts)
 
-    def generate_reply(self, account_id: int, original_post: str, platform: str = "X") -> str:
+    async def generate_reply(self, account_id: int, original_post: str, platform: str = "X") -> str:
         with ErrorContext("generate_reply", account_id=account_id, platform=platform):
             with SessionLocal() as db:
                 from models import Account, StyleProfile
@@ -105,7 +105,7 @@ class BrainEngine:
                 ]
 
                 try:
-                    content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=256)
+                    content = await self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=256)
                     return content.strip() if content else "Great post!"
                 except Exception as e:
                     log_exception("Ollama chat failed in generate_reply", e, account_id=account_id, model=self.model)
@@ -160,7 +160,6 @@ class BrainEngine:
         texts = [p.content for p in last_posts[:20] if p.content]
         if not texts:
             return "Today I want to share something that matters to me. What do you think?"
-        # Pick a snippet from a recent post and rephrase slightly
         import random
         sample = random.choice(texts)
         return f"Thinking about {sample.split('.')[0][:100]}... What's your take?"
