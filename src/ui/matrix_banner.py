@@ -20,6 +20,6 @@ def matrix_header(title: str = "YOU2.0") -> ft.Container:
         height=90,
         bgcolor=ft.Colors.BLACK,
         padding=ft.Padding(12),
-        border_radius=ft.border_radius(6),
+        border_radius=ft.border_radius.all(6),
         border=ft.border.all(1, ft.Colors.BLUE_400),
     )

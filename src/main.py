@@ -234,16 +234,16 @@ class You2App:
             min_extended_width=200,
             group_alignment=-0.9,
             destinations=[
-                ft.NavigationRailDestination(icon=ft.icons.DASHBOARD, label="Dashboard"),
-                ft.NavigationRailDestination(icon=ft.icons.ACCOUNT_CIRCLE, label="Accounts"),
-                ft.NavigationRailDestination(icon=ft.icons.PSYCHOLOGY, label="Style"),
-                ft.NavigationRailDestination(icon=ft.icons.CREATE, label="Generate"),
-                ft.NavigationRailDestination(icon=ft.icons.SCHEDULE, label="Scheduler"),
-                ft.NavigationRailDestination(icon=ft.icons.HISTORY, label="History"),
-                ft.NavigationRailDestination(icon=ft.icons.ANALYTICS, label="Analytics"),
-                ft.NavigationRailDestination(icon=ft.icons.CHAT, label="Reply Bot"),
-                ft.NavigationRailDestination(icon=ft.icons.SETTINGS, label="Settings"),
-                ft.NavigationRailDestination(icon=ft.icons.MEDICAL_SERVICES, label="Diagnostics"),
+                ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD, label="Dashboard"),
+                ft.NavigationRailDestination(icon=ft.Icons.ACCOUNT_CIRCLE, label="Accounts"),
+                ft.NavigationRailDestination(icon=ft.Icons.PSYCHOLOGY, label="Style"),
+                ft.NavigationRailDestination(icon=ft.Icons.CREATE, label="Generate"),
+                ft.NavigationRailDestination(icon=ft.Icons.SCHEDULE, label="Scheduler"),
+                ft.NavigationRailDestination(icon=ft.Icons.HISTORY, label="History"),
+                ft.NavigationRailDestination(icon=ft.Icons.ANALYTICS, label="Analytics"),
+                ft.NavigationRailDestination(icon=ft.Icons.CHAT, label="Reply Bot"),
+                ft.NavigationRailDestination(icon=ft.Icons.SETTINGS, label="Settings"),
+                ft.NavigationRailDestination(icon=ft.Icons.MEDICAL_SERVICES, label="Diagnostics"),
             ],
             on_change=self._on_nav_change,
         )
@@ -328,10 +328,10 @@ class You2App:
         self.content_area.content = ft.Column([
             ft.Text("Dashboard", size=24, weight=ft.FontWeight.BOLD),
             ft.Row([
-                self._stat_card("Accounts", str(accounts), ft.icons.ACCOUNT_CIRCLE),
-                self._stat_card("Total Posts", str(posts), ft.icons.POST_ADD),
-                self._stat_card("Scheduled", str(scheduled), ft.icons.SCHEDULE),
-                self._stat_card("Published", str(published), ft.icons.CHECK_CIRCLE),
+                self._stat_card("Accounts", str(accounts), ft.Icons.ACCOUNT_CIRCLE),
+                self._stat_card("Total Posts", str(posts), ft.Icons.POST_ADD),
+                self._stat_card("Scheduled", str(scheduled), ft.Icons.SCHEDULE),
+                self._stat_card("Published", str(published), ft.Icons.CHECK_CIRCLE),
             ], wrap=True),
             ft.Divider(),
             ft.Text("Recent Activity", size=18, weight=ft.FontWeight.BOLD),
@@ -363,7 +363,7 @@ class You2App:
                 accounts_col.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.Colors.GREY_600),
+                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.Colors.GREY_600),
                             ft.Text("No accounts yet", size=16, weight=ft.FontWeight.BOLD),
                             ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=ft.Colors.GREY_400),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
@@ -386,7 +386,7 @@ class You2App:
                                     ft.Row([
                                         ft.Text(f"{a.platform}", weight=ft.FontWeight.BOLD, size=16),
                                         ft.Text(f"@{a.username or 'unknown'}{expiry}", size=12),
-                                        ft.IconButton(ft.icons.DELETE, tooltip="Delete", on_click=lambda e, aid=a.id: remove_account(aid)),
+                                        ft.IconButton(ft.Icons.DELETE, tooltip="Delete", on_click=lambda e, aid=a.id: remove_account(aid)),
                                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                                     ft.Text(f"Active: {a.is_active}", size=11),
                                 ]),
@@ -880,7 +880,7 @@ class You2App:
                                     ft.Text(p.content[:60] + "..." if len(p.content) > 60 else p.content, size=12),
                                     ft.Text(f"{p.scheduled_at.strftime('%Y-%m-%d %H:%M')} | {p.status}", size=10),
                                 ], expand=True),
-                                ft.IconButton(ft.icons.DELETE, tooltip="Cancel", on_click=lambda e, pid=p.id: cancel_post(pid)),
+                                ft.IconButton(ft.Icons.DELETE, tooltip="Cancel", on_click=lambda e, pid=p.id: cancel_post(pid)),
                             ]),
                             padding=8,
                         )
@@ -1040,7 +1040,7 @@ class You2App:
                 posts_list.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.icons.SEARCH_OFF, size=48, color=ft.Colors.GREY_600),
+                            ft.Icon(ft.Icons.SEARCH_OFF, size=48, color=ft.Colors.GREY_600),
                             ft.Text("No posts found", size=16, weight=ft.FontWeight.BOLD),
                             ft.Text("Try adjusting your search or filter", size=12, color=ft.Colors.GREY_400),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
