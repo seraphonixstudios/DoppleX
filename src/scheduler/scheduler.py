@@ -19,6 +19,7 @@ from encryption.crypto import decrypt
 from utils.logger import get_logger
 from utils.audit import log_action
 from utils.time_utils import utc_now
+from utils.error_handler import ErrorContext, log_exception, notify_error
 from config.settings import load_settings
 
 logger = get_logger("you2.scheduler")
@@ -111,34 +112,35 @@ class You2Scheduler:
                 db.commit()
                 return
 
-            try:
-                if account.platform == "X":
-                    result = post_tweet(account.id, post.content)
-                elif account.platform == "TikTok":
-                    if post.media_path:
-                        result = upload_video(account.id, post.media_path, post.content)
+            with ErrorContext("scheduler_publish", account_id=account.id, platform=account.platform, post_id=scheduled_post_id):
+                try:
+                    if account.platform == "X":
+                        result = post_tweet(account.id, post.content)
+                    elif account.platform == "TikTok":
+                        if post.media_path:
+                            result = upload_video(account.id, post.media_path, post.content)
+                        else:
+                            result = {"ok": False, "error": "TikTok posts require a video file"}
                     else:
-                        result = {"ok": False, "error": "TikTok posts require a video file"}
-                else:
-                    result = {"ok": False, "error": f"Unknown platform: {account.platform}"}
+                        result = {"ok": False, "error": f"Unknown platform: {account.platform}"}
 
-                if result.get("ok"):
-                    post.status = "published"
-                    post.published_at = utc_now()
-                    post.post_id = result.get("tweet_id") or result.get("post_id")
-                    log_action("scheduled_published", account_id=account.id, status="success", platform=account.platform)
-                else:
+                    if result.get("ok"):
+                        post.status = "published"
+                        post.published_at = utc_now()
+                        post.post_id = result.get("tweet_id") or result.get("post_id")
+                        log_action("scheduled_published", account_id=account.id, status="success", platform=account.platform)
+                    else:
+                        post.status = "failed"
+                        post.error_message = result.get("error", "Unknown error")
+                        log_action("scheduled_published", account_id=account.id, status="failed", platform=account.platform, details=result.get("error"))
+
+                    db.commit()
+                except Exception as e:
+                    log_exception("Scheduled publish failed", e, account_id=account.id, post_id=scheduled_post_id)
                     post.status = "failed"
-                    post.error_message = result.get("error", "Unknown error")
-                    log_action("scheduled_published", account_id=account.id, status="failed", platform=account.platform, details=result.get("error"))
-
-                db.commit()
-            except Exception as e:
-                logger.exception("Scheduled publish failed")
-                post.status = "failed"
-                post.error_message = str(e)
-                db.commit()
-                log_action("scheduled_published", account_id=account.id, status="failed", platform=account.platform, details=str(e))
+                    post.error_message = str(e)
+                    db.commit()
+                    log_action("scheduled_published", account_id=account.id, status="failed", platform=account.platform, details=str(e))
 
     def get_upcoming_posts(self, account_id: Optional[int] = None, limit: int = 50) -> list:
         with SessionLocal() as db:
@@ -179,13 +181,14 @@ class You2Scheduler:
             account = db.get(Account, account_id)
         if not account or not account.reply_bot_enabled:
             return
-        try:
-            bot = XReplyBot(account)
-            result = bot.run_once()
-            if result.get("replied", 0) > 0:
-                logger.info("Reply bot: %d replies sent for account %d", result["replied"], account_id)
-        except Exception as e:
-            logger.exception("Reply bot check failed for account %d", account_id)
+        with ErrorContext("reply_bot_check", account_id=account_id):
+            try:
+                bot = XReplyBot(account)
+                result = bot.run_once()
+                if result.get("replied", 0) > 0:
+                    logger.info("Reply bot: %d replies sent for account %d", result["replied"], account_id)
+            except Exception as e:
+                log_exception("Reply bot check failed", e, account_id=account_id)
 
     def shutdown(self):
         self._scheduler.shutdown(wait=True)

@@ -18,6 +18,7 @@ from db.database import SessionLocal
 from utils.logger import get_logger
 from utils.audit import log_action
 from utils.time_utils import utc_now
+from utils.error_handler import ErrorContext, log_exception
 from config.settings import load_settings
 
 logger = get_logger("you2.tiktok")
@@ -123,7 +124,7 @@ class TikTokClient:
                     return {"ok": True, "info": f"Upload attempt {attempt} completed"}
 
             except Exception as e:
-                logger.warning("TikTok upload attempt %d failed: %s", attempt, e)
+                log_exception("TikTok upload attempt failed", e, attempt=attempt, account_id=self.account.id, video_path=str(video_path))
                 if browser:
                     try:
                         browser.close()
@@ -178,7 +179,7 @@ class TikTokClient:
 
                 browser.close()
         except Exception as e:
-            logger.exception("TikTok scraping failed")
+            log_exception("TikTok scraping failed", e, account_id=self.account.id, username=username)
             if browser:
                 try:
                     browser.close()
@@ -189,64 +190,66 @@ class TikTokClient:
 
 
 def upload_video(account_id: int, video_path: str, caption: str, hashtags: List[str] | None = None, dry_run: bool = False) -> Dict:
-    if dry_run:
-        return {"ok": True, "info": "dry_run"}
-    with SessionLocal() as db:
-        account = db.get(Account, account_id)
-        if not account:
-            return {"ok": False, "error": "Account not found"}
+    with ErrorContext("upload_video", account_id=account_id, platform="TikTok", video_path=video_path):
+        if dry_run:
+            return {"ok": True, "info": "dry_run"}
+        with SessionLocal() as db:
+            account = db.get(Account, account_id)
+            if not account:
+                return {"ok": False, "error": "Account not found"}
 
-        client = TikTokClient(account)
-        result = client.upload_video(video_path, caption, hashtags)
+            client = TikTokClient(account)
+            result = client.upload_video(video_path, caption, hashtags)
 
-        if result.get("ok"):
-            post = PostHistory(
-                account_id=account.id,
-                platform="TikTok",
-                content=caption,
-                posted_at=utc_now(),
-                source="live_post",
-                meta_data=json.dumps({"video_path": video_path, "url": result.get("url")}),
-            )
-            db.add(post)
-            db.commit()
-            log_action("live_post", account_id=account.id, status="success", platform="TikTok", details=f"video={video_path}")
-        else:
-            log_action("live_post", account_id=account.id, status="failed", platform="TikTok", details=result.get("error"))
+            if result.get("ok"):
+                post = PostHistory(
+                    account_id=account.id,
+                    platform="TikTok",
+                    content=caption,
+                    posted_at=utc_now(),
+                    source="live_post",
+                    meta_data=json.dumps({"video_path": video_path, "url": result.get("url")}),
+                )
+                db.add(post)
+                db.commit()
+                log_action("live_post", account_id=account.id, status="success", platform="TikTok", details=f"video={video_path}")
+            else:
+                log_action("live_post", account_id=account.id, status="failed", platform="TikTok", details=result.get("error"))
 
-        return result
+            return result
 
 
 def scrape_tiktok_history(account_id: int, max_videos: int = 50) -> Dict:
-    with SessionLocal() as db:
-        account = db.get(Account, account_id)
-        if not account:
-            return {"ok": False, "error": "Account not found"}
-        if not account.username:
-            return {"ok": False, "error": "Account username not set"}
+    with ErrorContext("scrape_tiktok_history", account_id=account_id, max_videos=max_videos):
+        with SessionLocal() as db:
+            account = db.get(Account, account_id)
+            if not account:
+                return {"ok": False, "error": "Account not found"}
+            if not account.username:
+                return {"ok": False, "error": "Account username not set"}
 
-        client = TikTokClient(account)
-        videos = client.get_user_videos(account.username, max_videos)
+            client = TikTokClient(account)
+            videos = client.get_user_videos(account.username, max_videos)
 
-        imported = 0
-        for vid in videos:
-            existing = db.query(PostHistory).filter(
-                PostHistory.account_id == account.id,
-                PostHistory.content == vid.get("caption", "")
-            ).first()
-            if existing:
-                continue
+            imported = 0
+            for vid in videos:
+                existing = db.query(PostHistory).filter(
+                    PostHistory.account_id == account.id,
+                    PostHistory.content == vid.get("caption", "")
+                ).first()
+                if existing:
+                    continue
 
-            post = PostHistory(
-                account_id=account.id,
-                platform="TikTok",
-                content=vid.get("caption", ""),
-                meta_data=json.dumps({"url": vid.get("url"), "source": "scraped"}),
-                is_scraped=True,
-            )
-            db.add(post)
-            imported += 1
+                post = PostHistory(
+                    account_id=account.id,
+                    platform="TikTok",
+                    content=vid.get("caption", ""),
+                    meta_data=json.dumps({"url": vid.get("url"), "source": "scraped"}),
+                    is_scraped=True,
+                )
+                db.add(post)
+                imported += 1
 
-        db.commit()
-        log_action("history_scrape", account_id=account.id, status="success", platform="TikTok", details=f"imported={imported}")
-        return {"ok": True, "imported": imported, "total_fetched": len(videos)}
+            db.commit()
+            log_action("history_scrape", account_id=account.id, status="success", platform="TikTok", details=f"imported={imported}")
+            return {"ok": True, "imported": imported, "total_fetched": len(videos)}

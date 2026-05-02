@@ -36,9 +36,11 @@ from encryption.crypto import encrypt, decrypt
 from oauth.oauth_config import PROVIDERS
 from oauth.oauth_manager import authorize_provider, refresh_provider
 from ui.matrix_banner import matrix_header
+from ui.tray_manager import TrayManager
 from config.settings import load_settings
 from image_gen.sd_client import ImageGenerator
 from analytics import metrics
+from utils.error_handler import ErrorContext, log_exception, notify_error, _get_recovery_hint
 
 logger = get_logger("you2.ui")
 settings = load_settings()
@@ -77,9 +79,97 @@ class You2App:
         self.generator = ContentGenerator()
         self.style_learner = StyleLearner()
         self.settings = settings
+        self.tray = TrayManager(on_show=self._show_window, on_exit=self._exit_app)
+
+        # Hook window close → minimize to tray
+        self.page.window.prevent_close = True
+        self.page.window.on_event = self._on_window_event
 
         self._build_ui()
         self._start_background_tasks()
+        self._start_tray()
+
+    def _on_window_event(self, e):
+        if e.data == "close":
+            if self.tray.is_available():
+                self.page.window.visible = False
+                self.page.update()
+                logger.info("Window minimized to tray")
+            else:
+                self._exit_app()
+
+    def _show_window(self):
+        """Restore window from tray."""
+        def _restore():
+            self.page.window.visible = True
+            self.page.window.focus()
+            self.page.update()
+        if self.page.platform_thread_id:
+            self.page.run_thread(_restore)
+        else:
+            _restore()
+
+    def _exit_app(self):
+        """Fully exit the application."""
+        logger.info("Shutting down from tray")
+        self.tray.stop()
+        self.scheduler.shutdown()
+        self.page.window.destroy()
+
+    def _start_tray(self):
+        """Start the system tray icon."""
+        if self.tray.start():
+            # Hook scheduler publish events for notifications
+            original_publish = self.scheduler._publish
+            def _publish_with_notify(scheduled_post_id: int):
+                original_publish(scheduled_post_id)
+                try:
+                    with SessionLocal() as db:
+                        post = db.get(ScheduledPost, scheduled_post_id)
+                        if post and post.status == "published":
+                            self.tray.notify(
+                                "Post Published",
+                                f"Scheduled post published to {post.account.platform}"
+                            )
+                        elif post and post.status == "failed":
+                            self.tray.notify(
+                                "Post Failed",
+                                f"Scheduled post failed: {post.error_message or 'Unknown error'}"
+                            )
+                except Exception:
+                    pass
+            self.scheduler._publish = _publish_with_notify
+
+    def _show_error(self, title: str, exc: Exception, show_snackbar: bool = True):
+        """Display an error to the user via snackbar, tray notification, and logs."""
+        hint = _get_recovery_hint(exc)
+        message = f"{title}: {exc}"
+        logger.error("GUI error | %s | %s | Hint: %s", title, exc, hint)
+        
+        if show_snackbar:
+            try:
+                self.page.show_snack_bar(
+                    ft.SnackBar(
+                        content=ft.Text(f"{message} (Hint: {hint})"),
+                        action="Dismiss",
+                        bgcolor=ft.colors.RED_400,
+                    )
+                )
+            except Exception:
+                pass
+        
+        # Tray notification for critical errors
+        if self.tray.is_available():
+            notify_error(title, str(exc) + f" ({hint})", self.tray)
+
+    def _safe_ui_call(self, title: str, func, *args, **kwargs):
+        """Wrap a UI callback with error handling."""
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            log_exception(f"UI operation failed: {title}", e)
+            self._show_error(title, e)
+            return None
 
     def _build_ui(self):
         # Header
@@ -406,6 +496,7 @@ class You2App:
                     status.value = "Style analysis complete"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Style analysis failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -454,7 +545,8 @@ class You2App:
                     else:
                         status.value = f"Scrape failed: {res.get('error')}"
                 except Exception as e:
-                    status.value = f"Error: {str(e)}"
+                    status.value = f"Scrape failed: {str(e)}"
+                    self._show_error("Scrape and learn failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -513,6 +605,7 @@ class You2App:
                     status.value = f"Generated ({len(content)} chars)"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Content generation failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -532,6 +625,7 @@ class You2App:
                     status.value = f"Regenerated ({len(content)} chars)"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Regeneration failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -567,6 +661,7 @@ class You2App:
                         status.value = f"Post failed: {res.get('error')}"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Post now failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -595,6 +690,7 @@ class You2App:
                         img_status.value = "Image generation failed"
                 except Exception as e:
                     img_status.value = f"Error: {str(e)}"
+                    self._show_error("Image generation failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -633,6 +729,7 @@ class You2App:
                         status.value = f"Post failed: {res.get('error')}"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Post with image failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -821,6 +918,7 @@ class You2App:
                     refresh_posts()
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("History scrape failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()
@@ -1045,6 +1143,7 @@ class You2App:
                         status.value = f"Check failed: {result.get('error')}"
                 except Exception as e:
                     status.value = f"Error: {str(e)}"
+                    self._show_error("Reply bot check failed", e)
                 self.page.update()
 
             threading.Thread(target=_task, daemon=True).start()

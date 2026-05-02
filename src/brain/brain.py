@@ -9,6 +9,7 @@ from brain.ollama_bridge import OllamaBridge
 from embeddings.vector_store import VectorStore
 from config.settings import load_settings
 from utils.logger import get_logger
+from utils.error_handler import ErrorContext, log_exception
 
 logger = get_logger("you2.brain")
 settings = load_settings()
@@ -24,76 +25,91 @@ class BrainEngine:
         self.top_k = settings.top_k_memory
 
     def generate_post(self, account_id: int, topic_hint: str = "", mood: str = "") -> str:
-        with SessionLocal() as db:
-            from models import Account, StyleProfile
-            account = db.get(Account, account_id)
-            if not account:
-                return "Error: Account not found."
+        with ErrorContext("generate_post", account_id=account_id, topic_hint=topic_hint, mood=mood):
+            with SessionLocal() as db:
+                from models import Account, StyleProfile
+                account = db.get(Account, account_id)
+                if not account:
+                    return "Error: Account not found."
 
-            style_profile = db.query(StyleProfile).filter(StyleProfile.account_id == account_id).first()
-            style_json = style_profile.profile_json if style_profile else "{}"
+                style_profile = db.query(StyleProfile).filter(StyleProfile.account_id == account_id).first()
+                style_json = style_profile.profile_json if style_profile else "{}"
 
-            # Get recent posts for context
-            last_posts = db.query(PostHistory).filter(
-                PostHistory.account_id == account_id
-            ).order_by(PostHistory.created_at.desc()).limit(30).all()
+                # Get recent posts for context
+                last_posts = db.query(PostHistory).filter(
+                    PostHistory.account_id == account_id
+                ).order_by(PostHistory.created_at.desc()).limit(30).all()
 
-            # RAG: get similar posts from memory
-            context_posts = []
-            if last_posts:
-                query = topic_hint or last_posts[0].content if last_posts else ""
-                if query:
-                    similar = self.vector_store.search_similar_posts(account_id, query, k=self.top_k)
-                    context_posts = [post for post, score in similar if score > 0.5]
+                # RAG: get similar posts from memory
+                context_posts = []
+                if last_posts:
+                    query = topic_hint or last_posts[0].content if last_posts else ""
+                    if query:
+                        try:
+                            similar = self.vector_store.search_similar_posts(account_id, query, k=self.top_k)
+                            context_posts = [post for post, score in similar if score > 0.5]
+                        except Exception as e:
+                            log_exception("RAG search failed in generate_post", e, account_id=account_id)
 
-            # Get style memory
-            style_memory = []
-            if style_profile and style_profile.style_summary:
-                mems = self.vector_store.search_memory(account_id, style_profile.style_summary, k=3)
-                style_memory = [m for m, score in mems if score > 0.3]
+                # Get style memory
+                style_memory = []
+                if style_profile and style_profile.style_summary:
+                    try:
+                        mems = self.vector_store.search_memory(account_id, style_profile.style_summary, k=3)
+                        style_memory = [m for m, score in mems if score > 0.3]
+                    except Exception as e:
+                        log_exception("Style memory search failed", e, account_id=account_id)
 
-            prompt = self._build_prompt(
-                style_json=style_json,
-                last_posts=last_posts,
-                context_posts=context_posts,
-                style_memory=style_memory,
-                topic_hint=topic_hint,
-                mood=mood,
-            )
+                prompt = self._build_prompt(
+                    style_json=style_json,
+                    last_posts=last_posts,
+                    context_posts=context_posts,
+                    style_memory=style_memory,
+                    topic_hint=topic_hint,
+                    mood=mood,
+                )
 
-            messages = [
-                {"role": "system", "content": "You are You2.0, a personal AI clone that writes social media posts in the user's authentic voice. Match their style, tone, and topics exactly. Do not mention you are an AI."},
-                {"role": "user", "content": prompt},
-            ]
+                messages = [
+                    {"role": "system", "content": "You are You2.0, a personal AI clone that writes social media posts in the user's authentic voice. Match their style, tone, and topics exactly. Do not mention you are an AI."},
+                    {"role": "user", "content": prompt},
+                ]
 
-            content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
-            if content:
-                return content.strip()
+                try:
+                    content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
+                    if content:
+                        return content.strip()
+                except Exception as e:
+                    log_exception("Ollama chat failed in generate_post", e, account_id=account_id, model=self.model)
 
-            return self._fallback_style(last_posts)
+                return self._fallback_style(last_posts)
 
     def generate_reply(self, account_id: int, original_post: str, platform: str = "X") -> str:
-        with SessionLocal() as db:
-            from models import Account, StyleProfile
-            account = db.get(Account, account_id)
-            style_profile = db.query(StyleProfile).filter(StyleProfile.account_id == account_id).first()
-            style_json = style_profile.profile_json if style_profile else "{}"
+        with ErrorContext("generate_reply", account_id=account_id, platform=platform):
+            with SessionLocal() as db:
+                from models import Account, StyleProfile
+                account = db.get(Account, account_id)
+                style_profile = db.query(StyleProfile).filter(StyleProfile.account_id == account_id).first()
+                style_json = style_profile.profile_json if style_profile else "{}"
 
-            prompt = (
-                f"Write a reply to the following post in the user's authentic voice.\n\n"
-                f"Original post: {original_post}\n\n"
-                f"User's style: {style_json}\n\n"
-                f"Platform: {platform}\n"
-                f"Keep it concise and natural."
-            )
+                prompt = (
+                    f"Write a reply to the following post in the user's authentic voice.\n\n"
+                    f"Original post: {original_post}\n\n"
+                    f"User's style: {style_json}\n\n"
+                    f"Platform: {platform}\n"
+                    f"Keep it concise and natural."
+                )
 
-            messages = [
-                {"role": "system", "content": "You are You2.0, a personal AI clone. Write natural replies."},
-                {"role": "user", "content": prompt},
-            ]
+                messages = [
+                    {"role": "system", "content": "You are You2.0, a personal AI clone. Write natural replies."},
+                    {"role": "user", "content": prompt},
+                ]
 
-            content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=256)
-            return content.strip() if content else "Great post!"
+                try:
+                    content = self.ollama.chat(messages, model=self.model, temperature=self.temperature, max_tokens=256)
+                    return content.strip() if content else "Great post!"
+                except Exception as e:
+                    log_exception("Ollama chat failed in generate_reply", e, account_id=account_id, model=self.model)
+                    return "Great post!"
 
     def _build_prompt(
         self,

@@ -11,6 +11,7 @@ from db.database import SessionLocal
 from utils.logger import get_logger
 from utils.audit import log_action
 from utils.time_utils import utc_now
+from utils.error_handler import ErrorContext, log_exception
 from config.settings import load_settings
 
 logger = get_logger("you2.x_client")
@@ -63,8 +64,8 @@ class XClient:
             logger.error("Tweet failed: %s - %s", resp.status_code, resp.text)
             return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
         except Exception as e:
-            logger.exception("Tweet request failed")
-            return {"ok": False, "error": str(e)}
+            log_exception("X API post_tweet failed", e, account_id=self.account.id, platform="X")
+            return {"ok": False, "error": str(e), "error_type": type(e).__name__}
 
     def get_user_tweets(self, user_id: str, max_results: int = 100) -> List[Dict]:
         if not self.bearer_token:
@@ -97,7 +98,7 @@ class XClient:
                 if not pagination_token or not batch:
                     break
             except Exception as e:
-                logger.exception("Failed to fetch tweets")
+                log_exception("X API get_user_tweets failed", e, account_id=self.account.id, user_id=user_id)
                 break
 
         return tweets[:max_results]
@@ -110,8 +111,8 @@ class XClient:
             resp = requests.get(url, headers=self._headers(), timeout=15)
             if resp.status_code == 200:
                 return resp.json().get("data")
-        except Exception:
-            pass
+        except Exception as e:
+            log_exception("X API get_user_by_username failed", e, username=username)
         return None
 
     def upload_media(self, media_path: str) -> Optional[str]:
@@ -143,76 +144,78 @@ class XClient:
                 logger.error("Media upload failed: %s - %s", resp.status_code, resp.text)
                 return None
         except Exception as e:
-            logger.exception("Media upload error")
+            log_exception("X API upload_media failed", e, account_id=self.account.id, media_path=media_path)
             return None
 
 
 def post_tweet(account_id: int, content: str, reply_to: str | None = None) -> Dict:
-    with SessionLocal() as db:
-        account = db.get(Account, account_id)
-        if not account:
-            return {"ok": False, "error": "Account not found"}
-        client = XClient(account)
-        result = client.post_tweet(content, reply_to=reply_to)
-        if result.get("ok"):
-            post = PostHistory(
-                account_id=account.id,
-                platform="X",
-                content=content,
-                post_id=result.get("tweet_id"),
-                posted_at=utc_now(),
-                source="live_post",
-                meta_data=json.dumps({"reply_to": reply_to}),
-            )
-            db.add(post)
-            db.commit()
-            log_action("live_post", account_id=account.id, status="success", platform="X", details=f"tweet_id={result.get('tweet_id')}")
-        else:
-            log_action("live_post", account_id=account.id, status="failed", platform="X", details=result.get("error"))
-        return result
+    with ErrorContext("post_tweet", account_id=account_id, content_len=len(content)):
+        with SessionLocal() as db:
+            account = db.get(Account, account_id)
+            if not account:
+                return {"ok": False, "error": "Account not found"}
+            client = XClient(account)
+            result = client.post_tweet(content, reply_to=reply_to)
+            if result.get("ok"):
+                post = PostHistory(
+                    account_id=account.id,
+                    platform="X",
+                    content=content,
+                    post_id=result.get("tweet_id"),
+                    posted_at=utc_now(),
+                    source="live_post",
+                    meta_data=json.dumps({"reply_to": reply_to}),
+                )
+                db.add(post)
+                db.commit()
+                log_action("live_post", account_id=account.id, status="success", platform="X", details=f"tweet_id={result.get('tweet_id')}")
+            else:
+                log_action("live_post", account_id=account.id, status="failed", platform="X", details=result.get("error"))
+            return result
 
 
 def fetch_user_history(account_id: int, max_results: int = 100) -> Dict:
-    with SessionLocal() as db:
-        account = db.get(Account, account_id)
-        if not account:
-            return {"ok": False, "error": "Account not found"}
+    with ErrorContext("fetch_user_history", account_id=account_id, max_results=max_results):
+        with SessionLocal() as db:
+            account = db.get(Account, account_id)
+            if not account:
+                return {"ok": False, "error": "Account not found"}
 
-        client = XClient(account)
-        username = account.username
-        if not username:
-            return {"ok": False, "error": "Account username not set"}
+            client = XClient(account)
+            username = account.username
+            if not username:
+                return {"ok": False, "error": "Account username not set"}
 
-        user = client.get_user_by_username(username)
-        if not user:
-            return {"ok": False, "error": f"Could not find user @{username}"}
+            user = client.get_user_by_username(username)
+            if not user:
+                return {"ok": False, "error": f"Could not find user @{username}"}
 
-        user_id = user.get("id")
-        tweets = client.get_user_tweets(user_id, max_results=max_results)
+            user_id = user.get("id")
+            tweets = client.get_user_tweets(user_id, max_results=max_results)
 
-        imported = 0
-        for tweet in tweets:
-            existing = db.query(PostHistory).filter(
-                PostHistory.account_id == account.id,
-                PostHistory.post_id == tweet.get("id")
-            ).first()
-            if existing:
-                continue
+            imported = 0
+            for tweet in tweets:
+                existing = db.query(PostHistory).filter(
+                    PostHistory.account_id == account.id,
+                    PostHistory.post_id == tweet.get("id")
+                ).first()
+                if existing:
+                    continue
 
-            metrics = tweet.get("public_metrics", {})
-            post = PostHistory(
-                account_id=account.id,
-                platform="X",
-                post_id=tweet.get("id"),
-                content=tweet.get("text", ""),
-                posted_at=tweet.get("created_at"),
-                engagement=json.dumps(metrics),
-                meta_data=json.dumps({"source": "api_fetch", "entities": tweet.get("entities", {})}),
-                is_scraped=True,
-            )
-            db.add(post)
-            imported += 1
+                metrics = tweet.get("public_metrics", {})
+                post = PostHistory(
+                    account_id=account.id,
+                    platform="X",
+                    post_id=tweet.get("id"),
+                    content=tweet.get("text", ""),
+                    posted_at=tweet.get("created_at"),
+                    engagement=json.dumps(metrics),
+                    meta_data=json.dumps({"source": "api_fetch", "entities": tweet.get("entities", {})}),
+                    is_scraped=True,
+                )
+                db.add(post)
+                imported += 1
 
-        db.commit()
-        log_action("history_scrape", account_id=account.id, status="success", platform="X", details=f"imported={imported}")
-        return {"ok": True, "imported": imported, "total_fetched": len(tweets)}
+            db.commit()
+            log_action("history_scrape", account_id=account.id, status="success", platform="X", details=f"imported={imported}")
+            return {"ok": True, "imported": imported, "total_fetched": len(tweets)}

@@ -5,6 +5,7 @@ import requests
 from typing import List, Dict, Optional
 
 from utils.logger import get_logger
+from utils.error_handler import log_exception
 
 logger = get_logger("you2.ollama")
 
@@ -18,7 +19,7 @@ class OllamaBridge:
             r = requests.get(f"{self.base_url}/api/tags", timeout=3)
             return r.status_code == 200
         except Exception as e:
-            logger.debug("Ollama unavailable: %s", e)
+            log_exception("Ollama health check failed", e, base_url=self.base_url)
             return False
 
     def list_models(self) -> List[str]:
@@ -29,7 +30,7 @@ class OllamaBridge:
                 models = data.get("models", [])
                 return [m.get("name", m.get("model", "")) for m in models]
         except Exception as e:
-            logger.warning("Failed to list Ollama models: %s", e)
+            log_exception("Ollama list_models failed", e, base_url=self.base_url)
         return []
 
     def chat(self, messages: List[Dict[str, str]], model: str = "qwen3:8b-gpu", temperature: float = 0.7, max_tokens: int = 512) -> Optional[str]:
@@ -50,8 +51,10 @@ class OllamaBridge:
                 content = data.get("message", {}).get("content")
                 if content:
                     return content
+            else:
+                logger.warning("Ollama chat returned HTTP %s: %s", r.status_code, r.text[:200])
         except Exception as e:
-            logger.warning("Ollama chat failed: %s", e)
+            log_exception("Ollama chat failed", e, model=model, base_url=self.base_url)
         return None
 
     def generate(self, prompt: str, model: str = "qwen3:8b-gpu", temperature: float = 0.7, max_tokens: int = 512) -> Optional[str]:
@@ -70,8 +73,10 @@ class OllamaBridge:
             if r.status_code == 200:
                 data = r.json()
                 return data.get("response")
+            else:
+                logger.warning("Ollama generate returned HTTP %s: %s", r.status_code, r.text[:200])
         except Exception as e:
-            logger.warning("Ollama generate failed: %s", e)
+            log_exception("Ollama generate failed", e, model=model, base_url=self.base_url)
         return None
 
     def embeddings(self, text: str, model: str = "qwen3:8b-gpu") -> Optional[List[float]]:
@@ -87,6 +92,8 @@ class OllamaBridge:
                 embedding = data.get("embedding")
                 if embedding:
                     return embedding
+            else:
+                logger.warning("Ollama embeddings returned HTTP %s: %s", r.status_code, r.text[:200])
         except Exception as e:
-            logger.warning("Ollama embeddings failed: %s", e)
+            log_exception("Ollama embeddings failed", e, model=model, base_url=self.base_url)
         return None

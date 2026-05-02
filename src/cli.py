@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import click
+import functools
 import sys
 import os
 
-# Fix Windows console encoding for bundled EXE only (avoid breaking pytest capture)
-if getattr(sys, "frozen", False) and sys.platform == "win32":
+# Fix Windows console encoding (avoid breaking pytest capture)
+if sys.platform == "win32" and "pytest" not in sys.modules:
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # PyInstaller bootstrap
 if getattr(sys, "frozen", False):
@@ -18,7 +25,7 @@ else:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
 from db.database import init_db, SessionLocal
-from models import Account, PostHistory, StyleProfile, ScheduledPost
+from models import Account, PostHistory, StyleProfile, ScheduledPost, ContentQueue
 from brain.generator import ContentGenerator
 from brain.style_learner import StyleLearner
 from platforms.x_scraper import scrape_x_history
@@ -26,13 +33,36 @@ from platforms.tiktok_scraper import scrape_tiktok_history
 from x_api.x_client import post_tweet
 from tiktok.tiktok_client import upload_video
 from scheduler.scheduler import You2Scheduler
+from pipeline.pipeline import PipelineEngine
 from utils.logger import get_logger
 from utils.time_utils import utc_now
+from utils.error_handler import ErrorContext, _get_recovery_hint
 from config.settings import load_settings
 
 logger = get_logger("you2.cli")
 settings = load_settings()
 
+
+def _handle_command_error(ctx, operation, exc):
+    """Centralized error handler for CLI commands."""
+    hint = _get_recovery_hint(exc)
+    logger.error(f"Command failed: {operation} | {type(exc).__name__}: {exc}")
+    click.echo(click.style(f"Error: {exc}", fg="red"), err=True)
+    click.echo(click.style(f"Hint: {hint}", fg="yellow"), err=True)
+    ctx.exit(1)
+
+def command_wrapper(operation: str):
+    """Decorator to wrap CLI commands with error handling."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            ctx = click.get_current_context()
+            try:
+                return f(*args, **kwargs)
+            except Exception as exc:
+                _handle_command_error(ctx, operation, exc)
+        return wrapper
+    return decorator
 
 @click.group()
 @click.option('--debug', is_flag=True, help='Enable debug logging')
@@ -48,6 +78,7 @@ def cli(debug, dry_run):
         logging.getLogger("you2").setLevel(logging.DEBUG)
 
 
+@command_wrapper("gui")
 @cli.command()
 def gui():
     """Launch the desktop GUI"""
@@ -56,6 +87,9 @@ def gui():
     ft.app(target=gui_main)
 
 
+# ─────────── Account Commands ───────────
+
+@command_wrapper("add_account")
 @cli.command()
 @click.option('--platform', type=click.Choice(['X', 'TikTok']), required=True)
 @click.option('--username', required=True)
@@ -90,6 +124,7 @@ def add_account(platform, username, token, refresh, cookies, api_key, api_secret
         click.echo(f"Account added: {acc.id}")
 
 
+@command_wrapper("delete_account")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 def delete_account(account_id):
@@ -106,6 +141,7 @@ def delete_account(account_id):
     click.echo(f"Deleted account {account_id} ({platform}: @{username})")
 
 
+@command_wrapper("list_accounts")
 @cli.command()
 def list_accounts():
     """List all accounts"""
@@ -123,6 +159,9 @@ def list_accounts():
         click.echo(f"{a.id}: {a.platform} @{a.username} (active={a.is_active}){expiry}")
 
 
+# ─────────── Content Generation ───────────
+
+@command_wrapper("generate")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--topic', default='', help='Topic hint')
@@ -134,6 +173,7 @@ def generate(account_id, topic, mood):
     click.echo(content)
 
 
+@command_wrapper("regenerate")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.argument('original-content')
@@ -144,6 +184,57 @@ def regenerate(account_id, original_content):
     click.echo(content)
 
 
+@command_wrapper("queue_content")
+@cli.command()
+@click.option('--account-id', type=int, required=True)
+@click.option('--topic', default='', help='Topic hint')
+@click.option('--mood', default='', help='Mood')
+def queue_content(account_id, topic, mood):
+    """Generate content and add to queue as draft"""
+    pipe = PipelineEngine()
+    item = pipe.queue_content(
+        account_id=account_id,
+        content="",
+        topic_hint=topic,
+        mood=mood,
+        status="draft",
+    )
+    queue_id = item.id
+    # Generate now
+    gen = ContentGenerator()
+    content = gen.generate_and_store(account_id, topic_hint=topic, mood=mood)
+    with SessionLocal() as db:
+        item = db.get(ContentQueue, queue_id)
+        item.content = content
+        db.commit()
+    click.echo(f"Queued item {queue_id} (draft)")
+    click.echo(content)
+
+
+@command_wrapper("bulk_generate")
+@cli.command()
+@click.option('--account-id', type=int, required=True)
+@click.option('--topics', required=True, help='Comma-separated topics')
+@click.option('--count', type=int, default=1, help='Posts per topic')
+@click.option('--platform', default='X', help='Target platform')
+def bulk_generate(account_id, topics, count, platform):
+    """Generate multiple posts across topics"""
+    pipe = PipelineEngine()
+    topic_list = [t.strip() for t in topics.split(',')]
+    items = pipe.bulk_generate(
+        account_id=account_id,
+        topics=topic_list,
+        count_per_topic=count,
+        platform=platform,
+    )
+    click.echo(f"Generated and queued {len(items)} posts")
+    for item in items:
+        click.echo(f"  [{item.id}] {item.content[:60]}...")
+
+
+# ─────────── Style & Scraping ───────────
+
+@command_wrapper("analyze_style")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 def analyze_style(account_id):
@@ -155,6 +246,7 @@ def analyze_style(account_id):
     click.echo(f"Avg length: {profile.avg_post_length}")
 
 
+@command_wrapper("scrape_x")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--max-results', type=int, default=100)
@@ -167,6 +259,7 @@ def scrape_x(account_id, max_results):
         click.echo(f"Error: {result.get('error')}")
 
 
+@command_wrapper("scrape_tiktok")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--max-videos', type=int, default=50)
@@ -179,6 +272,29 @@ def scrape_tiktok(account_id, max_videos):
         click.echo(f"Error: {result.get('error')}")
 
 
+@command_wrapper("full_pipeline")
+@cli.command()
+@click.option('--account-id', type=int, required=True)
+@click.option('--topic', default='', help='Topic hint')
+@click.option('--mood', default='', help='Mood')
+def full_pipeline(account_id, topic, mood):
+    """Full pipeline: scrape → analyze → generate → queue"""
+    pipe = PipelineEngine()
+    result = pipe.scrape_and_generate(account_id, topic=topic, mood=mood, auto_queue=True)
+    if result.get('ok'):
+        click.echo(f"Scraped {result['scraped']} posts, style analyzed: {result['analyzed']}")
+        click.echo(f"Generated ({len(result.get('content', ''))} chars):")
+        click.echo(result.get('content', ''))
+        if result.get('queued'):
+            click.echo(f"Queued as item {result['queue_id']}")
+    else:
+        click.echo(f"Pipeline failed: {result.get('error')}")
+        sys.exit(1)
+
+
+# ─────────── Publishing ───────────
+
+@command_wrapper("post_x")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.argument('content')
@@ -194,6 +310,7 @@ def post_x(account_id, content):
         click.echo(f"Error: {result.get('error')}")
 
 
+@command_wrapper("post_tiktok")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--video-path', required=True)
@@ -210,6 +327,28 @@ def post_tiktok(account_id, video_path, caption):
         click.echo(f"Error: {result.get('error')}")
 
 
+@command_wrapper("cross_post")
+@cli.command()
+@click.option('--x-account-id', type=int, required=True)
+@click.option('--tiktok-account-id', type=int, required=True)
+@click.option('--video-path', help='Video for TikTok')
+@click.option('--date', help='Schedule date (YYYY-MM-DD HH:MM)')
+@click.argument('content')
+def cross_post(x_account_id, tiktok_account_id, video_path, date, content):
+    """Post to both X and TikTok simultaneously"""
+    pipe = PipelineEngine()
+    schedule_at = None
+    if date:
+        from datetime import datetime
+        schedule_at = datetime.strptime(date, '%Y-%m-%d %H:%M')
+    result = pipe.cross_post(x_account_id, tiktok_account_id, content, video_path, schedule_at)
+    click.echo(f"X: {result['x']}")
+    click.echo(f"TikTok: {result['tiktok']}")
+
+
+# ─────────── Scheduling ───────────
+
+@command_wrapper("schedule")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.argument('content')
@@ -227,6 +366,20 @@ def schedule(account_id, content, date, media):
     click.echo(f"Scheduled post {post.id} for {dt}")
 
 
+@command_wrapper("schedule_best_time")
+@cli.command()
+@click.option('--account-id', type=int, required=True)
+@click.argument('content')
+@click.option('--day-offset', type=int, default=1, help='Days from now')
+@click.option('--media', help='Media path')
+def schedule_best_time(account_id, content, day_offset, media):
+    """Schedule a post at the optimal time for engagement"""
+    pipe = PipelineEngine()
+    post = pipe.schedule_at_best_time(account_id, content, day_offset=day_offset, media_path=media)
+    click.echo(f"Scheduled post {post.id} for {post.scheduled_at} (best time)")
+
+
+@command_wrapper("list_scheduled")
 @cli.command()
 def list_scheduled():
     """List scheduled posts"""
@@ -239,6 +392,7 @@ def list_scheduled():
     sched.shutdown()
 
 
+@command_wrapper("cancel")
 @cli.command()
 @click.option('--post-id', type=int, required=True)
 def cancel(post_id):
@@ -251,6 +405,17 @@ def cancel(post_id):
     sched.shutdown()
 
 
+@command_wrapper("retry_failed")
+@cli.command()
+@click.option('--account-id', type=int)
+def retry_failed(account_id):
+    """Retry failed scheduled posts and queue items"""
+    pipe = PipelineEngine()
+    count = pipe.retry_failed(account_id=account_id)
+    click.echo(f"Retried {count} failed items")
+
+
+@command_wrapper("pipeline")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 @click.option('--topic', default='', help='Topic hint')
@@ -277,6 +442,63 @@ def pipeline(account_id, topic, mood, date, media):
     sched.shutdown()
 
 
+# ─────────── Queue Management ───────────
+
+@command_wrapper("queue_list")
+@cli.command()
+@click.option('--account-id', type=int)
+@click.option('--status', help='Filter by status')
+def queue_list(account_id, status):
+    """List content queue items"""
+    pipe = PipelineEngine()
+    items = pipe.list_queue(account_id=account_id, status=status)
+    if not items:
+        click.echo("No queue items.")
+        return
+    for item in items:
+        click.echo(f"[{item.id}] {item.status} (p{item.priority}) [{item.platform}] {item.content[:50]}...")
+
+
+@command_wrapper("queue_approve")
+@cli.command()
+@click.option('--queue-id', type=int, required=True)
+def queue_approve(queue_id):
+    """Approve a draft queue item for publishing"""
+    pipe = PipelineEngine()
+    if pipe.approve_content(queue_id):
+        click.echo(f"Item {queue_id} approved")
+    else:
+        click.echo(f"Could not approve item {queue_id}")
+
+
+@command_wrapper("queue_publish")
+@cli.command()
+@click.option('--queue-id', type=int, required=True)
+def queue_publish(queue_id):
+    """Publish a queued item immediately"""
+    pipe = PipelineEngine()
+    result = pipe.publish_queued(queue_id)
+    if result.get('ok'):
+        click.echo(f"Published item {queue_id}")
+    else:
+        click.echo(f"Failed: {result.get('error')}")
+
+
+@command_wrapper("queue_delete")
+@cli.command()
+@click.option('--queue-id', type=int, required=True)
+def queue_delete(queue_id):
+    """Delete a queue item"""
+    pipe = PipelineEngine()
+    if pipe.delete_queue_item(queue_id):
+        click.echo(f"Deleted item {queue_id}")
+    else:
+        click.echo(f"Item {queue_id} not found")
+
+
+# ─────────── Reply Bot ───────────
+
+@command_wrapper("reply_bot_check")
 @cli.command()
 @click.option('--account-id', type=int, required=True)
 def reply_bot_check(account_id):
@@ -295,6 +517,9 @@ def reply_bot_check(account_id):
         click.echo(f"Error: {result.get('error')}")
 
 
+# ─────────── Analytics & Export ───────────
+
+@command_wrapper("export_data")
 @cli.command()
 @click.option('--output', '-o', default='you2_export.json', help='Output file path')
 def export_data(output):
@@ -342,9 +567,10 @@ def export_data(output):
     click.echo(f"Exported {len(accounts)} accounts, {len(posts)} posts, {len(profiles)} style profiles to {output}")
 
 
+@command_wrapper("status")
 @cli.command()
 def status():
-    """Show system status (Ollama, accounts, scheduled posts)"""
+    """Show system status (Ollama, accounts, scheduled posts, queue)"""
     from brain.ollama_bridge import OllamaBridge
     bridge = OllamaBridge(settings.ollama_url)
     ollama_ok = bridge.is_available()
@@ -357,9 +583,24 @@ def status():
         accounts = db.query(Account).count()
         posts = db.query(PostHistory).count()
         scheduled = db.query(ScheduledPost).filter(ScheduledPost.status == "scheduled").count()
+        queue_draft = db.query(ContentQueue).filter(ContentQueue.status == "draft").count()
+        queue_approved = db.query(ContentQueue).filter(ContentQueue.status == "approved").count()
     click.echo(f"Accounts: {accounts}")
     click.echo(f"Posts: {posts}")
     click.echo(f"Scheduled: {scheduled}")
+    click.echo(f"Queue (draft/approved): {queue_draft}/{queue_approved}")
+
+
+@command_wrapper("best_times")
+@cli.command()
+@click.option('--account-id', type=int)
+def best_times(account_id):
+    """Show best posting times based on engagement history"""
+    pipe = PipelineEngine()
+    times = pipe.get_best_posting_times(account_id)
+    click.echo("Top posting hours (engagement-based):")
+    for hour, score in times:
+        click.echo(f"  {hour:02d}:00 — score: {score}")
 
 
 if __name__ == '__main__':

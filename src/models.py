@@ -35,6 +35,7 @@ class Account(Base):
     scheduled = relationship("ScheduledPost", back_populates="account", cascade="all, delete-orphan")
     memory_chunks = relationship("MemoryChunk", back_populates="account", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="account")
+    queue_items = relationship("ContentQueue", back_populates="account", cascade="all, delete-orphan")
 
 
 class StyleProfile(Base):
@@ -117,3 +118,24 @@ class ScheduledPost(Base):
     created_at = Column(DateTime, default=utc_now)
 
     account = relationship("Account", back_populates="scheduled")
+
+
+class ContentQueue(Base):
+    __tablename__ = "content_queue"
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    media_path = Column(Text, nullable=True)
+    platform = Column(String(20), nullable=False, default="X")  # 'X', 'TikTok', 'cross'
+    status = Column(String(20), default="draft", index=True)  # draft, approved, queued, published, failed
+    priority = Column(Integer, default=5)  # 1-10, lower = higher priority
+    scheduled_at = Column(DateTime, nullable=True, index=True)
+    topic_hint = Column(String(200), nullable=True)
+    mood = Column(String(40), nullable=True)
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    account = relationship("Account", back_populates="queue_items")
