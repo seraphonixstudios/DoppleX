@@ -45,8 +45,8 @@ def sanitize_username(username: str) -> str:
     
     username = username.strip().lstrip("@")
     
-    # Allow letters, numbers, underscores, dots, hyphens
-    if not re.match(r"^[\w\.-]+$", username):
+    # Allow ASCII letters, numbers, underscores, dots, hyphens only
+    if not re.match(r"^[\w\.-]+$", username, flags=re.ASCII):
         raise ValidationError("Username contains invalid characters. Use only letters, numbers, underscores, dots, and hyphens.")
     
     if len(username) < 1 or len(username) > 50:
@@ -206,7 +206,7 @@ def rate_limit(key_prefix: str, max_requests: int = 10, window_seconds: int = 60
 # the query API properly. These are extra defensive checks for raw strings.
 
 SQL_KEYWORDS = {"drop", "delete", "truncate", "alter", "grant", "revoke", "exec", "execute", "union", "insert", "update"}
-SQL_PATTERN = re.compile(r"[';\"]|--|/\*|\*/", re.IGNORECASE)
+SQL_PATTERN = re.compile(r"[;\"]|--|/\*|\*/", re.IGNORECASE)
 
 
 def check_sql_injection(value: str) -> bool:
@@ -297,9 +297,14 @@ SAFE_MOODS = {"", "happy", "excited", "thoughtful", "casual", "professional", "s
 def validate_mood(mood: str) -> str:
     """Validate and normalize mood."""
     mood = mood.strip().lower()
+    if len(mood) > 50:
+        mood = mood[:50]
     if mood and mood not in SAFE_MOODS:
         # Allow custom moods but sanitize
-        mood = sanitize_text(mood, max_length=50, allow_newlines=False)
+        try:
+            mood = sanitize_text(mood, max_length=50, allow_newlines=False)
+        except ValidationError:
+            mood = mood[:50]
     return mood
 
 
