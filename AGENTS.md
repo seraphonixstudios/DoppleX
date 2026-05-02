@@ -1,5 +1,7 @@
 # AGENTS.md — You2.0 Social Brain
 
+**Version**: 1.0.0 | **Last Updated**: 2026-05-02
+
 Project context for AI coding agents working on this codebase.
 
 ---
@@ -55,14 +57,17 @@ You2.0 Social Brain (repo: DoppleX) is a fully local, AI-powered social media ma
 │   │   └── sd_client.py          # Stable Diffusion WebUI API client
 │   ├── ui/                       # Flet UI components
 │   │   ├── matrix_banner.py
-│   │   └── dialogs.py
+│   │   ├── dialogs.py
+│   │   └── tray_manager.py       # System tray background operation
 │   ├── prompts/
 │   │   └── prompt_builder.py
 │   └── utils/                    # Cross-cutting utilities
 │       ├── logger.py             # Rotating file + console logging
 │       ├── audit.py              # DB audit logging
 │       ├── time_utils.py         # UTC helper (replaces datetime.utcnow)
-│       ├── error_handler.py      # safe_call wrapper
+│       ├── error_handler.py      # ErrorContext + safe_call + recovery hints
+│       ├── validators.py         # Input sanitization + SQL injection guards + rate limiting
+│       ├── updater.py            # GitHub release update checker
 │       └── log_export.py
 ├── tests/                        # pytest test suite
 │   ├── conftest.py               # Path bootstrapping + Ollama mock
@@ -93,7 +98,7 @@ You2.0 Social Brain (repo: DoppleX) is a fully local, AI-powered social media ma
 ```bash
 pytest tests/ -v
 ```
-All 12 tests must pass before committing.
+All 20 tests must pass before committing.
 
 ### Build EXE (Windows)
 ```bash
@@ -134,6 +139,10 @@ pip install -e ".[all]"
 5. **Modular requirements**: Core deps are minimal. GUI/TikTok/X are optional extras.
 6. **Dry-run mode**: Global `--dry-run` flag for safe testing without API calls.
 7. **Settings persistence**: JSON file in platform data dir, survives restarts.
+8. **Async I/O everywhere**: `aiohttp` for all HTTP clients (Ollama, X API). GUI stays responsive. APScheduler threads use `asyncio.run()` for async code.
+9. **Alembic migrations**: Schema changes managed via Alembic. `alembic upgrade head` on startup.
+10. **Defensive validation**: All user inputs sanitized via `utils.validators`. SQL injection guards, rate limiting, platform-specific length checks.
+11. **System tray integration**: GUI minimizes to tray, scheduler keeps running in background.
 
 ---
 
@@ -157,14 +166,14 @@ pip install -e ".[all]"
 
 ### Modifying Models
 1. Edit `src/models.py`
-2. Run `init_db()` — SQLAlchemy will create new tables automatically (existing tables unchanged)
-3. For schema migrations, manual SQLite migration scripts are needed (no Alembic currently)
+2. Run `alembic revision --autogenerate -m "Description"` to create migration
+3. Run `alembic upgrade head` to apply migration
+4. Update `alembic.ini` if database path changes
 
 ---
 
 ## Known Limitations
 
-- No Alembic migrations (SQLite schema changes are manual)
 - No Docker image yet
 - CI workflow file exists but pushing it requires a PAT with `workflow` scope
 - X media upload requires OAuth 1.0a credentials separate from OAuth 2.0 bearer token
