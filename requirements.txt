@@ -5,8 +5,10 @@
 # Core (required)
 click>=8.1.0
 sqlalchemy>=2.0.0
+alembic>=1.13.0
 cryptography>=42.0.0
 requests>=2.31.0
 aiohttp>=3.9.0
+packaging>=23.0
 numpy>=1.26.0
 apscheduler>=3.10.0

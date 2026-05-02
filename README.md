@@ -25,6 +25,11 @@ A fully local, AI-powered personal content brain for social media management. Ru
 - **Full Audit Logging**: Every action tracked for transparency
 - **System Tray Background**: GUI minimizes to tray and keeps posting in background
 - **Comprehensive Error Handling**: Structured error logging with recovery hints, audit trail integration, and user notifications
+- **Async I/O**: Non-blocking API calls with aiohttp — GUI stays responsive during generation, posting, and scraping
+- **Database Migrations**: Alembic-managed schema migrations for safe upgrades
+- **Input Validation & Security**: Sanitization, SQL injection guards, rate limiting, and platform-specific content limits
+- **Auto-Updater**: Built-in update checker against GitHub releases
+- **GUI Polish**: Content calendar, post history search/filter, keyboard shortcuts (Ctrl+1-9, Ctrl+G/P/S/H/Q), and friendly empty states
 - **CLI + GUI + EXE**: Desktop app, command-line, and standalone Windows executable
 - **Settings Persistence**: Settings saved to disk and survive app restarts
 - **Dry-Run Mode**: Test pipelines safely without making real API calls

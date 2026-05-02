@@ -89,6 +89,37 @@ class You2App:
         self._build_ui()
         self._start_background_tasks()
         self._start_tray()
+        self._setup_keyboard_shortcuts()
+
+    def _setup_keyboard_shortcuts(self):
+        """Set up global keyboard shortcuts."""
+        def on_keyboard(e: ft.KeyboardEvent):
+            # Ctrl+1-9: Switch tabs
+            if e.ctrl and e.key.isdigit():
+                idx = int(e.key) - 1
+                if 0 <= idx < len(self.nav_rail.destinations):
+                    self.nav_rail.selected_index = idx
+                    self._on_nav_change(None)
+            # Ctrl+G: Generate
+            elif e.ctrl and e.key.lower() == "g":
+                self.nav_rail.selected_index = 3
+                self._on_nav_change(None)
+            # Ctrl+P: Post Now (if on generate tab)
+            elif e.ctrl and e.key.lower() == "p":
+                self.nav_rail.selected_index = 3
+                self._on_nav_change(None)
+            # Ctrl+S: Schedule
+            elif e.ctrl and e.key.lower() == "s":
+                self.nav_rail.selected_index = 4
+                self._on_nav_change(None)
+            # Ctrl+H: History
+            elif e.ctrl and e.key.lower() == "h":
+                self.nav_rail.selected_index = 5
+                self._on_nav_change(None)
+            # Ctrl+Q: Quit
+            elif e.ctrl and e.key.lower() == "q":
+                self._exit_app()
+        self.page.on_keyboard_event = on_keyboard
 
     def _on_window_event(self, e):
         if e.data == "close":
@@ -306,28 +337,41 @@ class You2App:
             accounts_col.controls.clear()
             with SessionLocal() as db:
                 accounts = _refresh_accounts(db)
-            for a in accounts:
-                expiry = ""
-                if a.token_expiry:
-                    delta = a.token_expiry - utc_now()
-                    hrs = int(delta.total_seconds() // 3600)
-                    expiry = f" (expires in {hrs}h)" if hrs > 0 else " (expired)"
-
+            if not accounts:
                 accounts_col.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            ft.Column([
-                                ft.Row([
-                                    ft.Text(f"{a.platform}", weight=ft.FontWeight.BOLD, size=16),
-                                    ft.Text(f"@{a.username or 'unknown'}{expiry}", size=12),
-                                    ft.IconButton(ft.icons.DELETE, tooltip="Delete", on_click=lambda e, aid=a.id: remove_account(aid)),
-                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                                ft.Text(f"Active: {a.is_active}", size=11),
-                            ]),
-                            padding=12,
-                        )
+                    ft.Container(
+                        ft.Column([
+                            ft.Icon(ft.icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.colors.GREY_600),
+                            ft.Text("No accounts yet", size=16, weight=ft.FontWeight.BOLD),
+                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=ft.colors.GREY_400),
+                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        alignment=ft.alignment.center,
+                        padding=40,
                     )
                 )
+            else:
+                for a in accounts:
+                    expiry = ""
+                    if a.token_expiry:
+                        delta = a.token_expiry - utc_now()
+                        hrs = int(delta.total_seconds() // 3600)
+                        expiry = f" (expires in {hrs}h)" if hrs > 0 else " (expired)"
+
+                    accounts_col.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                ft.Column([
+                                    ft.Row([
+                                        ft.Text(f"{a.platform}", weight=ft.FontWeight.BOLD, size=16),
+                                        ft.Text(f"@{a.username or 'unknown'}{expiry}", size=12),
+                                        ft.IconButton(ft.icons.DELETE, tooltip="Delete", on_click=lambda e, aid=a.id: remove_account(aid)),
+                                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                    ft.Text(f"Active: {a.is_active}", size=11),
+                                ]),
+                                padding=12,
+                            )
+                        )
+                    )
             self.page.update()
 
         def remove_account(aid: int):
@@ -859,6 +903,69 @@ class You2App:
         refresh_accounts()
         refresh_scheduled()
 
+        # ── Content Calendar ──
+        calendar_grid = ft.GridView(
+            runs_count=7,
+            max_extent=80,
+            child_aspect_ratio=1.2,
+            spacing=4,
+            run_spacing=4,
+            height=340,
+        )
+        calendar_month_label = ft.Text(size=16, weight=ft.FontWeight.BOLD)
+
+        def build_calendar(year: int = None, month: int = None):
+            from calendar import monthcalendar, month_name
+            now = utc_now()
+            year = year or now.year
+            month = month or now.month
+            calendar_month_label.value = f"{month_name[month]} {year}"
+            calendar_grid.controls.clear()
+            # Day headers
+            for day_name in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+                calendar_grid.controls.append(
+                    ft.Container(
+                        ft.Text(day_name, size=10, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+                        alignment=ft.alignment.center,
+                        bgcolor=ft.colors.GREY_800,
+                        border_radius=4,
+                    )
+                )
+            # Get scheduled posts for this month
+            with SessionLocal() as db:
+                posts = db.query(ScheduledPost).filter(
+                    ScheduledPost.status == "scheduled",
+                ).all()
+            post_days = {}
+            for p in posts:
+                if p.scheduled_at and p.scheduled_at.year == year and p.scheduled_at.month == month:
+                    day = p.scheduled_at.day
+                    post_days.setdefault(day, 0)
+                    post_days[day] += 1
+            # Build grid
+            for week in monthcalendar(year, month):
+                for day in week:
+                    if day == 0:
+                        calendar_grid.controls.append(ft.Container())
+                    else:
+                        count = post_days.get(day, 0)
+                        color = ft.colors.BLUE_400 if count > 0 else ft.colors.GREY_800
+                        calendar_grid.controls.append(
+                            ft.Container(
+                                ft.Column([
+                                    ft.Text(str(day), size=12, text_align=ft.TextAlign.CENTER),
+                                    ft.Text(f"{count} post{'s' if count != 1 else ''}" if count else "", size=9, color=ft.colors.WHITE70),
+                                ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
+                                alignment=ft.alignment.center,
+                                bgcolor=color,
+                                border_radius=4,
+                                padding=2,
+                            )
+                        )
+            self.page.update()
+
+        build_calendar()
+
         self.content_area.content = ft.Column([
             ft.Text("Scheduler", size=24, weight=ft.FontWeight.BOLD),
             ft.Row([account_dd]),
@@ -866,15 +973,22 @@ class You2App:
             ft.Row([media_tf]),
             ft.Row([date_picker, time_picker, ft.ElevatedButton("Schedule Post", on_click=schedule_clicked)]),
             status,
+            ft.Divider(),
+            ft.Text("Content Calendar", size=18, weight=ft.FontWeight.BOLD),
+            calendar_month_label,
+            calendar_grid,
+            ft.Divider(),
             ft.Text("Upcoming Posts:", weight=ft.FontWeight.BOLD),
-            scheduled_list,
+            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=ft.colors.GREY_400),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
 
     def _show_history(self):
         account_dd = ft.Dropdown(label="Filter by Account", width=300, options=[ft.dropdown.Option("0", "All Accounts")])
+        search_tf = ft.TextField(label="Search posts...", width=300, hint_text="Type to filter by content")
         posts_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         status = ft.Text()
+        result_count = ft.Text("", size=12, color=ft.colors.GREY_400)
 
         def refresh_accounts():
             account_dd.options = [ft.dropdown.Option("0", "All Accounts")]
@@ -889,21 +1003,48 @@ class You2App:
         def refresh_posts():
             posts_list.controls.clear()
             aid = int(account_dd.value) if account_dd.value else 0
+            query_text = search_tf.value.strip().lower() if search_tf.value else ""
             with SessionLocal() as db:
-                posts = _refresh_posts(db, account_id=aid if aid > 0 else None, limit=100)
-            for p in posts:
+                query = db.query(PostHistory).order_by(PostHistory.created_at.desc())
+                if aid > 0:
+                    query = query.filter(PostHistory.account_id == aid)
+                if query_text:
+                    query = query.filter(PostHistory.content.ilike(f"%{query_text}%"))
+                posts = query.limit(100).all()
+            
+            result_count.value = f"Showing {len(posts)} post{'s' if len(posts) != 1 else ''}"
+            
+            if not posts:
                 posts_list.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            ft.Column([
-                                ft.Text(p.content[:120] + "..." if len(p.content) > 120 else p.content, size=12),
-                                ft.Text(f"{p.platform} | {p.source} | {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10),
-                            ]),
-                            padding=8,
-                        )
+                    ft.Container(
+                        ft.Column([
+                            ft.Icon(ft.icons.SEARCH_OFF, size=48, color=ft.colors.GREY_600),
+                            ft.Text("No posts found", size=16, weight=ft.FontWeight.BOLD),
+                            ft.Text("Try adjusting your search or filter", size=12, color=ft.colors.GREY_400),
+                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        alignment=ft.alignment.center,
+                        padding=40,
                     )
                 )
+            else:
+                for p in posts:
+                    posts_list.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                ft.Column([
+                                    ft.Text(p.content[:120] + "..." if len(p.content) > 120 else p.content, size=12),
+                                    ft.Text(f"{p.platform} | {p.source} | {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10),
+                                ]),
+                                padding=8,
+                            )
+                        )
+                    )
             self.page.update()
+
+        def on_search_change(_):
+            refresh_posts()
+
+        search_tf.on_change = on_search_change
 
         async def scrape_clicked(_):
             if not account_dd.value or account_dd.value == "0":
@@ -959,7 +1100,8 @@ class You2App:
 
         self.content_area.content = ft.Column([
             ft.Text("Post History", size=24, weight=ft.FontWeight.BOLD),
-            ft.Row([account_dd, scrape_btn, hist_spinner]),
+            ft.Row([account_dd, search_tf, scrape_btn, hist_spinner]),
+            result_count,
             status,
             posts_list,
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -1209,6 +1351,8 @@ class You2App:
         sd_url = ft.TextField(label="Stable Diffusion WebUI URL", value=self.settings.sd_webui_url, width=400)
         temp_slider = ft.Slider(min=0.0, max=1.5, value=self.settings.temperature, label="{value}", width=300)
         logs_box = ft.TextField(multiline=True, min_lines=10, max_lines=20, read_only=True, expand=True)
+        update_status = ft.Text("Click 'Check for Updates' to see if a new version is available.", size=12)
+        update_spinner = ft.ProgressRing(width=16, height=16, visible=False)
 
         def save_settings_clicked(_):
             self.settings.ollama_url = ollama_url.value
@@ -1233,6 +1377,25 @@ class You2App:
                     logs_box.value = f"Error reading logs: {e}"
             self.page.update()
 
+        def check_updates_clicked(_):
+            update_spinner.visible = True
+            update_status.value = "Checking for updates..."
+            self.page.update()
+
+            def _task():
+                try:
+                    from utils.updater import check_for_updates, get_update_info_text
+                    result = check_for_updates()
+                    text = get_update_info_text(result)
+                    update_status.value = text
+                except Exception as e:
+                    update_status.value = f"Could not check for updates: {e}"
+                finally:
+                    update_spinner.visible = False
+                    self.page.update()
+
+            threading.Thread(target=_task, daemon=True).start()
+
         refresh_logs()
 
         self.content_area.content = ft.Column([
@@ -1245,6 +1408,13 @@ class You2App:
             sd_url,
             ft.Row([ft.Text("Temperature:"), temp_slider]),
             ft.ElevatedButton("Save Settings", on_click=save_settings_clicked),
+            ft.Divider(),
+            ft.Text("Updates", weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.ElevatedButton("Check for Updates", on_click=check_updates_clicked),
+                update_spinner,
+            ]),
+            update_status,
             ft.Divider(),
             ft.Text("Logs", weight=ft.FontWeight.BOLD),
             ft.Row([ft.ElevatedButton("Refresh Logs", on_click=lambda _: refresh_logs())]),
