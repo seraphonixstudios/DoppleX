@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 from typing import List
 
@@ -16,6 +17,24 @@ if getattr(sys, "frozen", False):
         sys.path.insert(0, src_path)
 else:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+
+# ── Top-level exception handler ──
+def _install_exception_hook():
+    """Catch unhandled exceptions and log them with full traceback."""
+    from utils.logger import get_logger
+    _exc_logger = get_logger("you2.unhandled")
+    
+    original_hook = sys.excepthook
+    
+    def custom_excepthook(exc_type, exc_value, exc_tb):
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        _exc_logger.critical("Unhandled exception:\n%s", tb_str)
+        # Also try to notify if we have a page reference
+        original_hook(exc_type, exc_value, exc_tb)
+    
+    sys.excepthook = custom_excepthook
+
+_install_exception_hook()
 
 import flet as ft
 from utils.time_utils import utc_now
@@ -184,7 +203,7 @@ class You2App:
                     ft.SnackBar(
                         content=ft.Text(f"{message} (Hint: {hint})"),
                         action="Dismiss",
-                        bgcolor=ft.colors.RED_400,
+                        bgcolor=ft.Colors.RED_400,
                     )
                 )
             except Exception:
@@ -224,6 +243,7 @@ class You2App:
                 ft.NavigationRailDestination(icon=ft.icons.ANALYTICS, label="Analytics"),
                 ft.NavigationRailDestination(icon=ft.icons.CHAT, label="Reply Bot"),
                 ft.NavigationRailDestination(icon=ft.icons.SETTINGS, label="Settings"),
+                ft.NavigationRailDestination(icon=ft.icons.MEDICAL_SERVICES, label="Diagnostics"),
             ],
             on_change=self._on_nav_change,
         )
@@ -271,6 +291,8 @@ class You2App:
             self._show_reply_bot()
         elif index == 8:
             self._show_settings()
+        elif index == 9:
+            self._show_diagnostics()
 
     def _start_background_tasks(self):
         def check_ollama():
@@ -341,9 +363,9 @@ class You2App:
                 accounts_col.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.colors.GREY_600),
+                            ft.Icon(ft.icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=ft.Colors.GREY_600),
                             ft.Text("No accounts yet", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=ft.colors.GREY_400),
+                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=ft.Colors.GREY_400),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         alignment=ft.alignment.center,
                         padding=40,
@@ -927,7 +949,7 @@ class You2App:
                     ft.Container(
                         ft.Text(day_name, size=10, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                         alignment=ft.alignment.center,
-                        bgcolor=ft.colors.GREY_800,
+                        bgcolor=ft.Colors.GREY_800,
                         border_radius=4,
                     )
                 )
@@ -949,12 +971,12 @@ class You2App:
                         calendar_grid.controls.append(ft.Container())
                     else:
                         count = post_days.get(day, 0)
-                        color = ft.colors.BLUE_400 if count > 0 else ft.colors.GREY_800
+                        color = ft.Colors.BLUE_400 if count > 0 else ft.Colors.GREY_800
                         calendar_grid.controls.append(
                             ft.Container(
                                 ft.Column([
                                     ft.Text(str(day), size=12, text_align=ft.TextAlign.CENTER),
-                                    ft.Text(f"{count} post{'s' if count != 1 else ''}" if count else "", size=9, color=ft.colors.WHITE70),
+                                    ft.Text(f"{count} post{'s' if count != 1 else ''}" if count else "", size=9, color=ft.Colors.WHITE70),
                                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
                                 alignment=ft.alignment.center,
                                 bgcolor=color,
@@ -979,7 +1001,7 @@ class You2App:
             calendar_grid,
             ft.Divider(),
             ft.Text("Upcoming Posts:", weight=ft.FontWeight.BOLD),
-            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=ft.colors.GREY_400),
+            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=ft.Colors.GREY_400),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
 
@@ -988,7 +1010,7 @@ class You2App:
         search_tf = ft.TextField(label="Search posts...", width=300, hint_text="Type to filter by content")
         posts_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         status = ft.Text()
-        result_count = ft.Text("", size=12, color=ft.colors.GREY_400)
+        result_count = ft.Text("", size=12, color=ft.Colors.GREY_400)
 
         def refresh_accounts():
             account_dd.options = [ft.dropdown.Option("0", "All Accounts")]
@@ -1018,9 +1040,9 @@ class You2App:
                 posts_list.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.icons.SEARCH_OFF, size=48, color=ft.colors.GREY_600),
+                            ft.Icon(ft.icons.SEARCH_OFF, size=48, color=ft.Colors.GREY_600),
                             ft.Text("No posts found", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Try adjusting your search or filter", size=12, color=ft.colors.GREY_400),
+                            ft.Text("Try adjusting your search or filter", size=12, color=ft.Colors.GREY_400),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                         alignment=ft.alignment.center,
                         padding=40,
@@ -1144,7 +1166,7 @@ class You2App:
                                 from_y=0,
                                 to_y=count,
                                 width=16,
-                                color=ft.colors.BLUE_400,
+                                color=ft.Colors.BLUE_400,
                                 tooltip=ft.Tooltip(f"{day}: {count}"),
                             )]
                         )
@@ -1153,8 +1175,8 @@ class You2App:
                     bar_groups=bar_groups,
                     bottom_axis=ft.ChartAxis(labels=[]),
                     left_axis=ft.ChartAxis(labels_size=20, title=ft.Text("Posts"), title_size=20),
-                    horizontal_grid_lines=ft.ChartGridLines(color=ft.colors.GREY_800, width=1),
-                    tooltip_bgcolor=ft.colors.with_opacity(0.8, ft.colors.GREY_800),
+                    horizontal_grid_lines=ft.ChartGridLines(color=ft.Colors.GREY_800, width=1),
+                    tooltip_bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.GREY_800),
                     max_y=max_count + 1,
                     expand=True,
                 )
@@ -1419,6 +1441,125 @@ class You2App:
             ft.Text("Logs", weight=ft.FontWeight.BOLD),
             ft.Row([ft.ElevatedButton("Refresh Logs", on_click=lambda _: refresh_logs())]),
             logs_box,
+        ], scroll=ft.ScrollMode.AUTO, expand=True)
+        self.page.update()
+
+
+    def _show_diagnostics(self):
+        """Show diagnostics and health check panel."""
+        from utils.diagnostics import run_full_diagnostics, format_report_text, get_log_summary
+        
+        status_text = ft.Text("Click 'Run Diagnostics' to check system health.", size=12)
+        report_box = ft.TextField(multiline=True, min_lines=10, max_lines=25, read_only=True, expand=True)
+        spinner = ft.ProgressRing(width=16, height=16, visible=False)
+        
+        # Log viewer
+        log_filter = ft.Dropdown(
+            label="Filter",
+            width=120,
+            options=[
+                ft.dropdown.Option("ALL", "All"),
+                ft.dropdown.Option("ERROR", "Errors"),
+                ft.dropdown.Option("WARNING", "Warnings"),
+                ft.dropdown.Option("INFO", "Info"),
+            ],
+            value="ALL",
+        )
+        log_box = ft.TextField(multiline=True, min_lines=8, max_lines=15, read_only=True, expand=True)
+        
+        def refresh_logs():
+            log_path = os.path.join("logs", "you2.log")
+            if not os.path.exists(log_path):
+                log_box.value = "No logs yet."
+                self.page.update()
+                return
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.read().splitlines()
+                
+                level = log_filter.value
+                if level != "ALL":
+                    lines = [l for l in lines if level in l]
+                
+                log_box.value = "\n".join(lines[-300:])
+            except Exception as e:
+                log_box.value = f"Error reading logs: {e}"
+            self.page.update()
+        
+        def log_filter_changed(_):
+            refresh_logs()
+        
+        log_filter.on_change = log_filter_changed
+        
+        async def run_diag_clicked(_):
+            spinner.visible = True
+            status_text.value = "Running diagnostics..."
+            report_box.value = ""
+            self.page.update()
+            
+            try:
+                report = await run_full_diagnostics(
+                    ollama_url=self.settings.ollama_url,
+                    sd_url=self.settings.sd_webui_url,
+                )
+                report_box.value = format_report_text(report)
+                status_text.value = f"Diagnostics complete: {report.overall_status.upper()}"
+                
+                # Color-code status
+                if report.overall_status == "ok":
+                    status_text.color = ft.Colors.GREEN_400
+                elif report.overall_status == "warning":
+                    status_text.color = ft.Colors.ORANGE_400
+                else:
+                    status_text.color = ft.Colors.RED_400
+                    
+            except Exception as e:
+                tb = traceback.format_exc()
+                report_box.value = f"Diagnostics failed: {e}\n\n{tb}"
+                status_text.value = "Diagnostics failed"
+                status_text.color = ft.Colors.RED_400
+            finally:
+                spinner.visible = False
+                self.page.update()
+        
+        def export_report_clicked(_):
+            try:
+                from utils.diagnostics import run_full_diagnostics
+                import asyncio
+                report = asyncio.run(run_full_diagnostics(
+                    ollama_url=self.settings.ollama_url,
+                    sd_url=self.settings.sd_webui_url,
+                ))
+                path = os.path.join(os.getcwd(), f"diagnostics_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    import json
+                    json.dump(report.to_dict(), f, indent=2)
+                status_text.value = f"Report exported to {path}"
+                self.page.update()
+            except Exception as e:
+                status_text.value = f"Export failed: {e}"
+                self.page.update()
+        
+        refresh_logs()
+        
+        self.content_area.content = ft.Column([
+            ft.Text("Diagnostics", size=24, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.ElevatedButton("Run Diagnostics", on_click=run_diag_clicked),
+                ft.ElevatedButton("Export Report (JSON)", on_click=export_report_clicked),
+                spinner,
+            ]),
+            status_text,
+            ft.Divider(),
+            ft.Text("Health Report", weight=ft.FontWeight.BOLD),
+            report_box,
+            ft.Divider(),
+            ft.Row([
+                ft.Text("Application Logs", weight=ft.FontWeight.BOLD),
+                log_filter,
+                ft.ElevatedButton("Refresh Logs", on_click=lambda _: refresh_logs()),
+            ]),
+            log_box,
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
 

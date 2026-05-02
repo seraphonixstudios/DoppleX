@@ -613,5 +613,28 @@ def best_times(account_id):
         click.echo(f"  {hour:02d}:00 — score: {score}")
 
 
+@cli.command()
+@click.option('--json', 'as_json', is_flag=True, help="Output raw JSON report")
+def diagnose(as_json):
+    """Run full diagnostics and health checks"""
+    import asyncio
+    from utils.diagnostics import run_full_diagnostics, format_report_text
+    
+    report = asyncio.run(run_full_diagnostics(
+        ollama_url=settings.ollama_url,
+        sd_url=settings.sd_webui_url,
+    ))
+    
+    if as_json:
+        import json
+        click.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        click.echo(format_report_text(report))
+    
+    # Exit with error code if diagnostics failed
+    if report.overall_status == "error":
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     cli()
