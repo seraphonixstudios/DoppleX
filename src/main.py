@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import traceback
+import logging.handlers  # PyInstaller needs explicit import
 from datetime import datetime, timedelta, timezone
 from typing import List
 
@@ -17,24 +18,6 @@ if getattr(sys, "frozen", False):
         sys.path.insert(0, src_path)
 else:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-
-# ── Top-level exception handler ──
-def _install_exception_hook():
-    """Catch unhandled exceptions and log them with full traceback."""
-    from utils.logger import get_logger
-    _exc_logger = get_logger("you2.unhandled")
-    
-    original_hook = sys.excepthook
-    
-    def custom_excepthook(exc_type, exc_value, exc_tb):
-        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-        _exc_logger.critical("Unhandled exception:\n%s", tb_str)
-        # Also try to notify if we have a page reference
-        original_hook(exc_type, exc_value, exc_tb)
-    
-    sys.excepthook = custom_excepthook
-
-_install_exception_hook()
 
 import flet as ft
 from utils.time_utils import utc_now
@@ -113,8 +96,11 @@ class You2App:
     def _setup_keyboard_shortcuts(self):
         """Set up global keyboard shortcuts."""
         def on_keyboard(e: ft.KeyboardEvent):
+            # Ctrl+?: Help dialog
+            if e.ctrl and e.key == "?":
+                self._show_help_dialog()
             # Ctrl+1-9: Switch tabs
-            if e.ctrl and e.key.isdigit():
+            elif e.ctrl and e.key.isdigit():
                 idx = int(e.key) - 1
                 if 0 <= idx < len(self.nav_rail.destinations):
                     self.nav_rail.selected_index = idx
@@ -251,9 +237,17 @@ class You2App:
         # Content area
         self.content_area = ft.Container(expand=True)
 
-        # Status bar
+        # Status bar with color coding
         self.status_text = ft.Text("Ready", size=12)
-        self.ollama_status = ft.Text("Ollama: checking...", size=12)
+        self.ollama_status = ft.Text("Ollama: checking...", size=12, color=ft.Colors.GREY_400)
+        self.db_status = ft.Text("DB: ok", size=12, color=ft.Colors.GREEN_400)
+        
+        # Help button
+        help_btn = ft.IconButton(
+            icon=ft.Icons.HELP_OUTLINE,
+            tooltip="Keyboard Shortcuts (Ctrl+?)",
+            on_click=lambda _: self._show_help_dialog(),
+        )
 
         # Layout
         self.page.add(
@@ -265,11 +259,65 @@ class You2App:
                     self.content_area,
                 ], expand=True),
                 ft.Divider(height=1),
-                ft.Row([self.status_text, ft.Text(" | ", size=12), self.ollama_status], alignment=ft.MainAxisAlignment.START),
+                ft.Row([
+                    self.status_text,
+                    ft.Text(" | ", size=12),
+                    self.ollama_status,
+                    ft.Text(" | ", size=12),
+                    self.db_status,
+                    ft.Container(expand=True),
+                    help_btn,
+                ], alignment=ft.MainAxisAlignment.START),
             ], expand=True)
         )
 
         self._show_dashboard()
+
+    def _show_help_dialog(self):
+        """Show keyboard shortcuts help dialog."""
+        self.page.open(
+            ft.AlertDialog(
+                title=ft.Text("Keyboard Shortcuts", size=20, weight=ft.FontWeight.BOLD),
+                content=ft.Column([
+                    ft.Text("Navigation", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Text("Ctrl+1-9  → Switch tabs"),
+                    ft.Text("Ctrl+G    → Generate tab"),
+                    ft.Text("Ctrl+S    → Scheduler tab"),
+                    ft.Text("Ctrl+H    → History tab"),
+                    ft.Text("Ctrl+Q    → Quit app"),
+                    ft.Divider(),
+                    ft.Text("Tips", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Text("Use Diagnostics tab to troubleshoot connection issues."),
+                    ft.Text("Minimize to system tray to keep scheduler running."),
+                ], tight=True, spacing=8),
+                actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(e.control.parent))],
+            )
+        )
+
+    def _show_toast(self, message: str, type_: str = "info"):
+        """Show a toast notification."""
+        colors = {
+            "info": ft.Colors.BLUE_400,
+            "success": ft.Colors.GREEN_400,
+            "warning": ft.Colors.ORANGE_400,
+            "error": ft.Colors.RED_400,
+        }
+        icon = {
+            "info": ft.Icons.INFO,
+            "success": ft.Icons.CHECK_CIRCLE,
+            "warning": ft.Icons.WARNING,
+            "error": ft.Icons.ERROR,
+        }
+        self.page.show_snack_bar(
+            ft.SnackBar(
+                content=ft.Row([
+                    ft.Icon(icon.get(type_, ft.Icons.INFO), color=ft.Colors.WHITE, size=20),
+                    ft.Text(message, color=ft.Colors.WHITE),
+                ]),
+                bgcolor=colors.get(type_, ft.Colors.BLUE_400),
+                duration=3000,
+            )
+        )
 
     def _on_nav_change(self, e):
         index = e.control.selected_index
@@ -300,10 +348,17 @@ class You2App:
                 try:
                     available = asyncio.run(self.brain.ollama.is_available())
                     model = self.settings.ollama_model
-                    self.ollama_status.value = f"Ollama: {'connected' if available else 'offline'} ({model})"
+                    if available:
+                        self.ollama_status.value = f"Ollama: connected ({model})"
+                        self.ollama_status.color = ft.Colors.GREEN_400
+                    else:
+                        self.ollama_status.value = f"Ollama: offline"
+                        self.ollama_status.color = ft.Colors.RED_400
                     self.page.update()
                 except Exception:
-                    pass
+                    self.ollama_status.value = "Ollama: error"
+                    self.ollama_status.color = ft.Colors.RED_400
+                    self.page.update()
                 import time
                 time.sleep(10)
 
@@ -318,6 +373,46 @@ class You2App:
             published = db.query(ScheduledPost).filter(ScheduledPost.status == "published").count()
             recent_posts = db.query(PostHistory).order_by(PostHistory.created_at.desc()).limit(5).all()
 
+        # First-time user welcome screen
+        if accounts == 0:
+            self.content_area.content = ft.Column([
+                ft.Text("Welcome to You2.0 Social Brain", size=28, weight=ft.FontWeight.BOLD),
+                ft.Text("Your AI-powered social media assistant", size=14, color=ft.Colors.GREY_400),
+                ft.Divider(),
+                ft.Text("Get Started", size=20, weight=ft.FontWeight.BOLD),
+                ft.Row([
+                    self._action_card(
+                        "1. Add Account",
+                        "Connect your X or TikTok account",
+                        ft.Icons.ACCOUNT_CIRCLE,
+                        ft.Colors.BLUE_400,
+                        lambda _: self._nav_to(1),
+                    ),
+                    self._action_card(
+                        "2. Run Diagnostics",
+                        "Check that everything is working",
+                        ft.Icons.MEDICAL_SERVICES,
+                        ft.Colors.GREEN_400,
+                        lambda _: self._nav_to(9),
+                    ),
+                    self._action_card(
+                        "3. Generate Content",
+                        "Create your first AI-powered post",
+                        ft.Icons.CREATE,
+                        ft.Colors.PURPLE_400,
+                        lambda _: self._nav_to(3),
+                    ),
+                ], wrap=True),
+                ft.Divider(),
+                ft.Text("Quick Tips", size=16, weight=ft.FontWeight.BOLD),
+                ft.Text("• Press Ctrl+? for keyboard shortcuts", size=12),
+                ft.Text("• Minimize to tray to keep the scheduler running", size=12),
+                ft.Text("• Use the Diagnostics tab if something isn't working", size=12),
+            ], scroll=ft.ScrollMode.AUTO, expand=True)
+            self.page.update()
+            return
+
+        # Normal dashboard for returning users
         recent_list = ft.Column([
             ft.ListTile(
                 title=ft.Text(p.content[:80] + "..." if len(p.content) > 80 else p.content, size=12),
@@ -338,6 +433,27 @@ class You2App:
             recent_list,
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
+
+    def _nav_to(self, index: int):
+        """Navigate to a specific tab."""
+        self.nav_rail.selected_index = index
+        self._on_nav_change(type('obj', (object,), {'control': self.nav_rail})())
+
+    def _action_card(self, title: str, subtitle: str, icon, color, on_click):
+        """Create an action card for the welcome screen."""
+        return ft.Card(
+            content=ft.Container(
+                ft.Column([
+                    ft.Icon(icon, size=40, color=color),
+                    ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
+                    ft.Text(subtitle, size=12, color=ft.Colors.GREY_400),
+                    ft.ElevatedButton("Go", on_click=on_click, bgcolor=color, color=ft.Colors.WHITE),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                padding=24,
+                width=200,
+            ),
+            elevation=2,
+        )
 
     def _stat_card(self, title: str, value: str, icon):
         return ft.Card(
