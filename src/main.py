@@ -147,12 +147,8 @@ class You2App:
 
     def _on_window_event(self, e):
         if e.data == "close":
-            if self.tray.is_available():
-                self.page.window.visible = False
-                self.page.update()
-                logger.info("Window minimized to tray")
-            else:
-                self._exit_app()
+            # Always exit on close button — tray minimizes via tray menu instead
+            self._exit_app()
 
     def _show_window(self):
         """Restore window from tray."""
@@ -167,10 +163,22 @@ class You2App:
 
     def _exit_app(self):
         """Fully exit the application."""
-        logger.info("Shutting down from tray")
-        self.tray.stop()
-        self.scheduler.shutdown()
-        self.page.window.destroy()
+        logger.info("Shutting down")
+        self._shutdown = True
+        try:
+            self.tray.stop()
+        except Exception:
+            pass
+        try:
+            self.scheduler.shutdown()
+        except Exception:
+            pass
+        try:
+            self.page.window.close()
+        except Exception:
+            pass
+        import os
+        os._exit(0)
 
     def _start_tray(self):
         """Start the system tray icon."""
@@ -382,23 +390,38 @@ class You2App:
             self._show_diagnostics()
 
     def _start_background_tasks(self):
+        self._shutdown = False
+        import time
+
         def check_ollama():
-            while True:
+            while not getattr(self, "_shutdown", False):
                 try:
                     available = asyncio.run(self.brain.ollama.is_available())
                     model = self.settings.ollama_model
                     if available:
-                        self.ollama_status.value = f"Ollama: connected ({model})"
-                        self.ollama_status.color = Neon.GREEN
+                        status_val = f"Ollama: connected ({model})"
+                        status_color = Neon.GREEN
                     else:
-                        self.ollama_status.value = f"Ollama: offline"
-                        self.ollama_status.color = Neon.RED_400
-                    self.page.update()
+                        status_val = "Ollama: offline"
+                        status_color = Neon.RED
+                    # Safely update UI from background thread
+                    def _update():
+                        self.ollama_status.value = status_val
+                        self.ollama_status.color = status_color
+                        self.page.update()
+                    if self.page.platform_thread_id:
+                        self.page.run(_update)
+                    else:
+                        _update()
                 except Exception:
-                    self.ollama_status.value = "Ollama: error"
-                    self.ollama_status.color = Neon.RED_400
-                    self.page.update()
-                import time
+                    def _update_err():
+                        self.ollama_status.value = "Ollama: error"
+                        self.ollama_status.color = Neon.RED
+                        self.page.update()
+                    if self.page.platform_thread_id:
+                        self.page.run(_update_err)
+                    else:
+                        _update_err()
                 time.sleep(10)
 
         t = threading.Thread(target=check_ollama, daemon=True)
