@@ -41,6 +41,7 @@ from oauth.oauth_manager import authorize_provider, refresh_provider
 from ui.matrix_banner import matrix_header
 from ui.cyber_theme import Neon, MONO, neon_card, neon_button, ghost_button, neon_input, neon_dropdown, terminal_container, status_badge, apply_page_theme
 from ui.tray_manager import TrayManager
+from ui.dev_console import DevConsole
 from config.settings import load_settings
 from image_gen.sd_client import ImageGenerator
 from analytics import metrics
@@ -93,12 +94,29 @@ class You2App:
         self._start_background_tasks()
         self._start_tray()
         self._setup_keyboard_shortcuts()
+        self._setup_dev_console()
+
+    def _setup_dev_console(self):
+        """Initialize developer console and global error handler."""
+        self.dev_console = DevConsole(self.page)
+        self.dev_console.attach(self.page)
+
+        # Global exception hook that logs to dev console
+        original_hook = sys.excepthook
+        def _custom_excepthook(exc_type, exc_value, exc_tb):
+            self.dev_console.log_error(exc_type, exc_value, exc_tb)
+            logger.critical("Unhandled exception: %s", exc_value, exc_info=(exc_type, exc_value, exc_tb))
+            original_hook(exc_type, exc_value, exc_tb)
+        sys.excepthook = _custom_excepthook
 
     def _setup_keyboard_shortcuts(self):
         """Set up global keyboard shortcuts."""
         def on_keyboard(e: ft.KeyboardEvent):
+            # Ctrl+Shift+D: Developer console
+            if e.ctrl and e.shift and e.key.lower() == "d":
+                self.dev_console.toggle()
             # Ctrl+?: Help dialog
-            if e.ctrl and e.key == "?":
+            elif e.ctrl and e.key == "?":
                 self._show_help_dialog()
             # Ctrl+1-9: Switch tabs
             elif e.ctrl and e.key.isdigit():
@@ -253,7 +271,16 @@ class You2App:
         help_btn = ft.IconButton(
             icon=ft.Icons.HELP_OUTLINE,
             tooltip="Keyboard Shortcuts (Ctrl+?)",
+            icon_color=Neon.GREEN,
             on_click=lambda _: self._show_help_dialog(),
+        )
+        
+        # Developer console button
+        dev_btn = ft.IconButton(
+            icon=ft.Icons.TERMINAL,
+            tooltip="Developer Console (Ctrl+Shift+D)",
+            icon_color=Neon.AMBER,
+            on_click=lambda _: self.dev_console.show(),
         )
 
         # Layout
@@ -274,6 +301,7 @@ class You2App:
                     self.db_status,
                     ft.Container(expand=True),
                     help_btn,
+                    dev_btn,
                 ], alignment=ft.MainAxisAlignment.START),
             ], expand=True)
         )
@@ -287,11 +315,15 @@ class You2App:
                 title=ft.Text("Keyboard Shortcuts", size=20, weight=ft.FontWeight.BOLD),
                 content=ft.Column([
                     ft.Text("Navigation", weight=ft.FontWeight.BOLD, size=14),
-                    ft.Text("Ctrl+1-9  → Switch tabs"),
-                    ft.Text("Ctrl+G    → Generate tab"),
-                    ft.Text("Ctrl+S    → Scheduler tab"),
-                    ft.Text("Ctrl+H    → History tab"),
-                    ft.Text("Ctrl+Q    → Quit app"),
+                    ft.Text("Ctrl+1-9      → Switch tabs"),
+                    ft.Text("Ctrl+G        → Generate tab"),
+                    ft.Text("Ctrl+S        → Scheduler tab"),
+                    ft.Text("Ctrl+H        → History tab"),
+                    ft.Text("Ctrl+Q        → Quit app"),
+                    ft.Divider(),
+                    ft.Text("Developer", weight=ft.FontWeight.BOLD, size=14),
+                    ft.Text("Ctrl+Shift+D  → Developer Console (logs, errors, system info)"),
+                    ft.Text("Ctrl+?        → This help dialog"),
                     ft.Divider(),
                     ft.Text("Tips", weight=ft.FontWeight.BOLD, size=14),
                     ft.Text("Use Diagnostics tab to troubleshoot connection issues."),

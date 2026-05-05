@@ -289,8 +289,6 @@ def apply_page_theme(page: ft.Page):
             secondary=Neon.CYAN,
             surface=Neon.PANEL_BG,
             on_surface=Neon.GREEN,
-            background=Neon.DEEP_BLUE,
-            on_background=Neon.GREEN,
         ),
         text_theme=ft.TextTheme(
             body_medium=ft.TextStyle(font_family=MONO, color=Neon.GREEN),
