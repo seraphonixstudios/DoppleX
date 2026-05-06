@@ -270,25 +270,27 @@ class You2App:
         # Content area
         self.content_area = ft.Container(expand=True)
 
-        # Status bar with color coding
-        self.status_text = ft.Text("Ready", size=12)
-        self.ollama_status = ft.Text("Ollama: checking...", size=12, color=Neon.GRAY)
-        self.db_status = ft.Text("DB: ok", size=12, color=Neon.GREEN)
-        
+        # Status bar with neon styling
+        self.status_text = ft.Text("READY", size=11, color=Neon.WHITE, font_family=MONO, weight=ft.FontWeight.BOLD)
+        self.ollama_status = ft.Text("OLLAMA: CHECKING...", size=11, color=Neon.GRAY, font_family=MONO)
+        self.db_status = ft.Text("DB: OK", size=11, color=Neon.GREEN, font_family=MONO)
+
         # Help button
         help_btn = ft.IconButton(
             icon=ft.Icons.HELP_OUTLINE,
             tooltip="Keyboard Shortcuts (Ctrl+?)",
             icon_color=Neon.GREEN,
             on_click=lambda _: self._show_help_dialog(),
+            icon_size=18,
         )
-        
+
         # Developer console button
         dev_btn = ft.IconButton(
             icon=ft.Icons.TERMINAL,
             tooltip="Developer Console (Ctrl+Shift+D)",
             icon_color=Neon.AMBER,
             on_click=lambda _: self.dev_console.show(),
+            icon_size=18,
         )
 
         # Layout
@@ -301,16 +303,39 @@ class You2App:
                     self.content_area,
                 ], expand=True),
                 ft.Divider(height=1, color=Neon.BORDER),
-                ft.Row([
-                    self.status_text,
-                    ft.Text(" | ", size=12),
-                    self.ollama_status,
-                    ft.Text(" | ", size=12),
-                    self.db_status,
-                    ft.Container(expand=True),
-                    help_btn,
-                    dev_btn,
-                ], alignment=ft.MainAxisAlignment.START),
+                ft.Container(
+                    ft.Row([
+                        ft.Container(
+                            ft.Row([
+                                ft.Container(width=8, height=8, bgcolor=Neon.GREEN, border_radius=ft.border_radius.all(4)),
+                                self.status_text,
+                            ], spacing=6),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                            bgcolor=Neon.PANEL_BG,
+                            border=ft.border.all(1, Neon.BORDER),
+                            border_radius=ft.border_radius.all(2),
+                        ),
+                        ft.Container(
+                            self.ollama_status,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                            bgcolor=Neon.PANEL_BG,
+                            border=ft.border.all(1, Neon.BORDER),
+                            border_radius=ft.border_radius.all(2),
+                        ),
+                        ft.Container(
+                            self.db_status,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                            bgcolor=Neon.PANEL_BG,
+                            border=ft.border.all(1, Neon.BORDER),
+                            border_radius=ft.border_radius.all(2),
+                        ),
+                        ft.Container(expand=True),
+                        help_btn,
+                        dev_btn,
+                    ], alignment=ft.MainAxisAlignment.START, spacing=8),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                    bgcolor=Neon.BLACK,
+                ),
             ], expand=True)
         )
 
@@ -342,27 +367,48 @@ class You2App:
         )
 
     def _show_toast(self, message: str, type_: str = "info"):
-        """Show a toast notification."""
+        """Show a neon-styled toast notification with icon and auto-dismiss."""
         colors = {
             "info": Neon.CYAN,
             "success": Neon.GREEN,
             "warning": Neon.AMBER,
-            "error": Neon.RED_400,
+            "error": Neon.RED,
         }
-        icon = {
+        icon_map = {
             "info": ft.Icons.INFO,
             "success": ft.Icons.CHECK_CIRCLE,
             "warning": ft.Icons.WARNING,
             "error": ft.Icons.ERROR,
         }
+        glow_colors = {
+            "info": Neon.CYAN_DIM,
+            "success": Neon.GREEN_DIM,
+            "warning": Neon.AMBER_DIM,
+            "error": "#3D0A0A",
+        }
+        color = colors.get(type_, Neon.CYAN)
+        glow = glow_colors.get(type_, Neon.CYAN_DIM)
+        icon = icon_map.get(type_, ft.Icons.INFO)
+
         self.page.show_snack_bar(
             ft.SnackBar(
-                content=ft.Row([
-                    ft.Icon(icon.get(type_, ft.Icons.INFO), color=Neon.WHITE, size=20),
-                    ft.Text(message, color=Neon.WHITE),
-                ]),
-                bgcolor=colors.get(type_, Neon.CYAN),
-                duration=3000,
+                content=ft.Container(
+                    ft.Row([
+                        ft.Icon(icon, color=color, size=22),
+                        ft.Text(message, color=Neon.WHITE, font_family=MONO, size=13),
+                    ], spacing=12),
+                    padding=ft.padding.symmetric(horizontal=16, vertical=12),
+                    bgcolor=glow,
+                    border=ft.border.all(1, color),
+                    border_radius=ft.border_radius.all(2),
+                ),
+                bgcolor=Neon.BLACK,
+                duration=4000,
+                action=ft.TextButton(
+                    "DISMISS",
+                    style=ft.ButtonStyle(color=color, text_style=ft.TextStyle(font_family=MONO, size=11)),
+                    on_click=lambda e: self.page.close(e.control.parent),
+                ),
             )
         )
 
@@ -438,27 +484,27 @@ class You2App:
         # First-time user welcome screen
         if accounts == 0:
             self.content_area.content = ft.Column([
-                ft.Text("Welcome to You2.0 Social Brain", size=28, weight=ft.FontWeight.BOLD),
-                ft.Text("Your AI-powered social media assistant", size=14, color=Neon.GRAY),
+                ft.Text("WELCOME TO YOU2.0", size=28, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.GREEN),
+                ft.Text("Your AI-powered social media assistant", size=14, color=Neon.GRAY, font_family=MONO),
                 ft.Divider(),
-                ft.Text("Get Started", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("GET STARTED", size=16, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.CYAN),
                 ft.Row([
                     self._action_card(
-                        "1. Add Account",
+                        "1. ADD ACCOUNT",
                         "Connect your X or TikTok account",
                         ft.Icons.ACCOUNT_CIRCLE,
                         Neon.CYAN,
                         lambda _: self._nav_to(1),
                     ),
                     self._action_card(
-                        "2. Run Diagnostics",
+                        "2. RUN DIAGNOSTICS",
                         "Check that everything is working",
                         ft.Icons.MEDICAL_SERVICES,
                         Neon.GREEN,
                         lambda _: self._nav_to(9),
                     ),
                     self._action_card(
-                        "3. Generate Content",
+                        "3. GENERATE CONTENT",
                         "Create your first AI-powered post",
                         ft.Icons.CREATE,
                         Neon.MAGENTA,
@@ -466,35 +512,51 @@ class You2App:
                     ),
                 ], wrap=True),
                 ft.Divider(),
-                ft.Text("Quick Tips", size=16, weight=ft.FontWeight.BOLD),
-                ft.Text("• Press Ctrl+? for keyboard shortcuts", size=12),
-                ft.Text("• Minimize to tray to keep the scheduler running", size=12),
-                ft.Text("• Use the Diagnostics tab if something isn't working", size=12),
+                ft.Text("QUICK TIPS", size=14, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.AMBER),
+                ft.Text("• Press Ctrl+? for keyboard shortcuts", size=12, color=Neon.GRAY, font_family=MONO),
+                ft.Text("• Use the Diagnostics tab if something isn't working", size=12, color=Neon.GRAY, font_family=MONO),
+                ft.Text("• Press Ctrl+Shift+D to open the Developer Console", size=12, color=Neon.GRAY, font_family=MONO),
             ], scroll=ft.ScrollMode.AUTO, expand=True)
             self.page.update()
             return
 
         # Normal dashboard for returning users
         recent_list = ft.Column([
-            ft.ListTile(
-                title=ft.Text(p.content[:80] + "..." if len(p.content) > 80 else p.content, size=12),
-                subtitle=ft.Text(f"{p.platform} | {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10),
+            ft.Container(
+                ft.Column([
+                    ft.Text(p.content[:80] + "..." if len(p.content) > 80 else p.content, size=12, color=Neon.WHITE, font_family=MONO),
+                    ft.Text(f"{p.platform} | {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10, color=Neon.GRAY, font_family=MONO),
+                ], spacing=4),
+                padding=10,
+                bgcolor=Neon.PANEL_BG,
+                border=ft.border.all(1, Neon.BORDER),
+                border_radius=ft.border_radius.all(2),
             ) for p in recent_posts
-        ], scroll=ft.ScrollMode.AUTO, height=200)
+        ], scroll=ft.ScrollMode.AUTO, height=200, spacing=6)
 
         self.content_area.content = ft.Column([
-            ft.Text("Dashboard", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text("DASHBOARD", size=24, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.GREEN),
             ft.Row([
-                self._stat_card("Accounts", str(accounts), ft.Icons.ACCOUNT_CIRCLE),
-                self._stat_card("Total Posts", str(posts), ft.Icons.POST_ADD),
-                self._stat_card("Scheduled", str(scheduled), ft.Icons.SCHEDULE),
-                self._stat_card("Published", str(published), ft.Icons.CHECK_CIRCLE),
-            ], wrap=True),
+                self._stat_card("ACCOUNTS", str(accounts), ft.Icons.ACCOUNT_CIRCLE),
+                self._stat_card("POSTS", str(posts), ft.Icons.POST_ADD),
+                self._stat_card("SCHEDULED", str(scheduled), ft.Icons.SCHEDULE),
+                self._stat_card("PUBLISHED", str(published), ft.Icons.CHECK_CIRCLE),
+            ], wrap=True, spacing=12),
             ft.Divider(),
-            ft.Text("Recent Activity", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("RECENT ACTIVITY", size=16, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.CYAN),
             recent_list,
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
+
+    def _card_hover(self, e, color: str):
+        """Hover effect for cards - glow intensifies on hover."""
+        if e.data == "true":
+            e.control.border = ft.border.all(1, color)
+            e.control.shadow = ft.BoxShadow(blur_radius=16, color=f"{color}40", spread_radius=2)
+        else:
+            e.control.border = ft.border.all(1, Neon.BORDER)
+            e.control.shadow = ft.BoxShadow(blur_radius=8, color=f"{color}20", spread_radius=1)
+        e.control.update()
 
     def _nav_to(self, index: int):
         """Navigate to a specific tab."""
@@ -502,37 +564,47 @@ class You2App:
         self._on_nav_change(type('obj', (object,), {'control': self.nav_rail})())
 
     def _action_card(self, title: str, subtitle: str, icon, color, on_click):
-        """Create an action card for the welcome screen."""
-        return ft.Card(
-            content=ft.Container(
-                ft.Column([
-                    ft.Icon(icon, size=40, color=color),
-                    ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
-                    ft.Text(subtitle, size=12, color=Neon.GRAY),
-                    ft.ElevatedButton("Go", on_click=on_click, bgcolor=color, color=Neon.WHITE),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
-                padding=24,
-                width=200,
-            ),
-            elevation=2,
+        """Create a cyberpunk action card for the welcome screen."""
+        return ft.Container(
+            ft.Column([
+                ft.Icon(icon, size=40, color=color),
+                ft.Text(title, size=16, weight=ft.FontWeight.BOLD, font_family=MONO, color=Neon.WHITE),
+                ft.Text(subtitle, size=12, color=Neon.GRAY, font_family=MONO, text_align=ft.TextAlign.CENTER),
+                ft.ElevatedButton(
+                    "GO →",
+                    on_click=on_click,
+                    style=ft.ButtonStyle(
+                        bgcolor=color,
+                        color=Neon.BLACK,
+                        shape=ft.RoundedRectangleBorder(radius=2),
+                        text_style=ft.TextStyle(font_family=MONO, weight=ft.FontWeight.BOLD),
+                        padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                    ),
+                ),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            padding=24,
+            width=200,
+            bgcolor=Neon.PANEL_BG,
+            border=ft.border.all(1, Neon.BORDER),
+            border_radius=ft.border_radius.all(2),
+            shadow=ft.BoxShadow(blur_radius=8, color=f"{color}20", spread_radius=1),
+            on_hover=lambda e: self._card_hover(e, color),
         )
 
     def _stat_card(self, title: str, value: str, icon):
-        return ft.Card(
-            content=ft.Container(
-                ft.Column([
-                    ft.Icon(icon, size=32, color=Neon.GREEN),
-                    ft.Text(value, size=28, weight=ft.FontWeight.BOLD, color=Neon.GREEN, font_family=MONO),
-                    ft.Text(title, size=12, color=Neon.GRAY, font_family=MONO),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=20,
-                width=160,
-                bgcolor=Neon.PANEL_BG,
-                border=ft.border.all(1, Neon.BORDER),
-                border_radius=ft.border_radius.all(2),
-                shadow=ft.BoxShadow(blur_radius=8, color=Neon.BORDER_GLOW),
-            ),
-            elevation=0,
+        return ft.Container(
+            ft.Column([
+                ft.Icon(icon, size=32, color=Neon.GREEN),
+                ft.Text(value, size=32, weight=ft.FontWeight.BOLD, color=Neon.GREEN, font_family=MONO),
+                ft.Text(title.upper(), size=10, color=Neon.GRAY, font_family=MONO, weight=ft.FontWeight.BOLD),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+            padding=20,
+            width=160,
+            bgcolor=Neon.PANEL_BG,
+            border=ft.border.all(1, Neon.BORDER),
+            border_radius=ft.border_radius.all(2),
+            shadow=ft.BoxShadow(blur_radius=8, color=Neon.BORDER_GLOW, spread_radius=1),
+            on_hover=lambda e: self._card_hover(e, Neon.GREEN),
         )
 
     def _show_accounts(self):
@@ -546,12 +618,22 @@ class You2App:
                 accounts_col.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE_OUTLINED, size=48, color=Neon.GRAY),
-                            ft.Text("No accounts yet", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Add your first X or TikTok account using the form on the left", size=12, color=Neon.GRAY),
-                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE_OUTLINED, size=56, color=Neon.GRAY),
+                            ft.Text("No accounts yet", size=18, weight=ft.FontWeight.BOLD, color=Neon.WHITE, font_family=MONO),
+                            ft.Text("Add your first X or TikTok account to get started", size=12, color=Neon.GRAY, font_family=MONO, text_align=ft.TextAlign.CENTER),
+                            ft.ElevatedButton(
+                                "Add Account →",
+                                on_click=lambda _: self._nav_to(1),
+                                style=ft.ButtonStyle(
+                                    bgcolor=Neon.GREEN,
+                                    color=Neon.BLACK,
+                                    shape=ft.RoundedRectangleBorder(radius=2),
+                                    text_style=ft.TextStyle(font_family=MONO, weight=ft.FontWeight.BOLD),
+                                ),
+                            ),
+                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=12),
                         alignment=ft.alignment.center,
-                        padding=40,
+                        padding=60,
                     )
                 )
             else:
@@ -562,19 +644,41 @@ class You2App:
                         hrs = int(delta.total_seconds() // 3600)
                         expiry = f" (expires in {hrs}h)" if hrs > 0 else " (expired)"
 
+                    platform_colors = {"X": Neon.CYAN, "TikTok": Neon.MAGENTA}
+                    plat_color = platform_colors.get(a.platform, Neon.GREEN)
+                    status_bg = Neon.GREEN_DIM if a.is_active else "#3D0A0A"
+                    status_fg = Neon.GREEN if a.is_active else Neon.RED
+                    status_text = "ACTIVE" if a.is_active else "INACTIVE"
+
                     accounts_col.controls.append(
-                        ft.Card(
-                            content=ft.Container(
-                                ft.Column([
+                        ft.Container(
+                            ft.Column([
+                                ft.Row([
                                     ft.Row([
-                                        ft.Text(f"{a.platform}", weight=ft.FontWeight.BOLD, size=16),
-                                        ft.Text(f"@{a.username or 'unknown'}{expiry}", size=12),
-                                        ft.IconButton(ft.Icons.DELETE, tooltip="Delete", on_click=lambda e, aid=a.id: remove_account(aid)),
-                                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                                    ft.Text(f"Active: {a.is_active}", size=11),
-                                ]),
-                                padding=12,
-                            )
+                                        ft.Icon(
+                                            ft.Icons.CHAT if a.platform == "X" else ft.Icons.VIDEO_CAMERA_BACK,
+                                            color=plat_color, size=18,
+                                        ),
+                                        ft.Text(f"{a.platform}", weight=ft.FontWeight.BOLD, size=14, color=plat_color, font_family=MONO),
+                                    ], spacing=6),
+                                    ft.Container(
+                                        ft.Text(status_text, size=9, color=status_fg, weight=ft.FontWeight.BOLD, font_family=MONO),
+                                        bgcolor=status_bg,
+                                        padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                        border_radius=ft.border_radius.all(2),
+                                        border=ft.border.all(1, status_fg),
+                                    ),
+                                    ft.IconButton(ft.Icons.DELETE_OUTLINE, tooltip="Delete account", icon_color=Neon.RED, on_click=lambda e, aid=a.id: remove_account(aid)),
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Text(f"@{a.username or 'unknown'}", size=12, color=Neon.WHITE, font_family=MONO),
+                                ft.Text(expiry, size=10, color=Neon.GRAY, font_family=MONO) if expiry else ft.Container(),
+                            ], spacing=6),
+                            padding=16,
+                            bgcolor=Neon.PANEL_BG,
+                            border=ft.border.all(1, Neon.BORDER),
+                            border_radius=ft.border_radius.all(2),
+                            shadow=ft.BoxShadow(blur_radius=6, color=f"{plat_color}15", spread_radius=1),
+                            on_hover=lambda e, c=plat_color: self._card_hover(e, c),
                         )
                     )
             self.page.update()
@@ -1184,7 +1288,15 @@ class You2App:
             calendar_grid,
             ft.Divider(),
             ft.Text("Upcoming Posts:", weight=ft.FontWeight.BOLD),
-            scheduled_list if scheduled_list.controls else ft.Text("No scheduled posts yet. Use the form above to schedule your first post!", italic=True, color=Neon.GRAY),
+            scheduled_list if scheduled_list.controls else ft.Container(
+                ft.Column([
+                    ft.Icon(ft.Icons.SCHEDULE, size=48, color=Neon.GRAY),
+                    ft.Text("No scheduled posts yet", size=16, weight=ft.FontWeight.BOLD, color=Neon.WHITE, font_family=MONO),
+                    ft.Text("Use the form above to schedule your first post", size=12, color=Neon.GRAY, font_family=MONO),
+                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.center,
+                padding=40,
+            ),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
         self.page.update()
 
@@ -1223,27 +1335,42 @@ class You2App:
                 posts_list.controls.append(
                     ft.Container(
                         ft.Column([
-                            ft.Icon(ft.Icons.SEARCH_OFF, size=48, color=Neon.GRAY),
-                            ft.Text("No posts found", size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text("Try adjusting your search or filter", size=12, color=Neon.GRAY),
-                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                            ft.Icon(ft.Icons.SEARCH_OFF, size=56, color=Neon.GRAY),
+                            ft.Text("No posts found", size=18, weight=ft.FontWeight.BOLD, color=Neon.WHITE, font_family=MONO),
+                            ft.Text("Try adjusting your search or filter criteria", size=12, color=Neon.GRAY, font_family=MONO, text_align=ft.TextAlign.CENTER),
+                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=12),
                         alignment=ft.alignment.center,
-                        padding=40,
+                        padding=60,
                     )
                 )
             else:
-                for p in posts:
-                    posts_list.controls.append(
-                        ft.Card(
-                            content=ft.Container(
+                    for p in posts:
+                        plat_colors = {"X": Neon.CYAN, "TikTok": Neon.MAGENTA}
+                        pc = plat_colors.get(p.platform, Neon.GREEN)
+                        posts_list.controls.append(
+                            ft.Container(
                                 ft.Column([
-                                    ft.Text(p.content[:120] + "..." if len(p.content) > 120 else p.content, size=12),
-                                    ft.Text(f"{p.platform} | {p.source} | {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10),
-                                ]),
-                                padding=8,
+                                    ft.Row([
+                                        ft.Container(
+                                            ft.Text(p.platform, size=9, color=pc, weight=ft.FontWeight.BOLD, font_family=MONO),
+                                            bgcolor=f"{pc}15",
+                                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                            border_radius=ft.border_radius.all(2),
+                                            border=ft.border.all(1, f"{pc}30"),
+                                        ),
+                                        ft.Text(f"{p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''}", size=10, color=Neon.GRAY, font_family=MONO),
+                                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                    ft.Text(p.content[:140] + "..." if len(p.content) > 140 else p.content, size=12, color=Neon.WHITE, font_family=MONO),
+                                    ft.Text(f"Source: {p.source}", size=10, color=Neon.GRAY, font_family=MONO),
+                                ], spacing=6),
+                                padding=14,
+                                bgcolor=Neon.PANEL_BG,
+                                border=ft.border.all(1, Neon.BORDER),
+                                border_radius=ft.border_radius.all(2),
+                                shadow=ft.BoxShadow(blur_radius=4, color=f"{pc}10", spread_radius=1),
+                                on_hover=lambda e, c=pc: self._card_hover(e, c),
                             )
                         )
-                    )
             self.page.update()
 
         def on_search_change(_):

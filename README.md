@@ -6,6 +6,7 @@ A fully local, AI-powered personal content brain for social media management. Ru
 
 - **100% Local AI Brain**: Uses Ollama (no cloud LLMs required)
 - **Cross-Platform Desktop App**: Python 3.12+ with Flet UI
+- **Sci-Fi Cyberpunk Theme**: Matrix rain header, neon glow effects, terminal styling, CRT scanlines
 - **Real X/Twitter Integration**: OAuth 2.0, API v2 posting, history scraping, reply bot
 - **Real TikTok Integration**: Playwright-based video upload and history scraping
 - **Style Learning**: Analyzes your real posts to learn tone, topics, hashtags, and writing patterns
@@ -25,11 +26,13 @@ A fully local, AI-powered personal content brain for social media management. Ru
 - **Full Audit Logging**: Every action tracked for transparency
 - **System Tray Background**: GUI minimizes to tray and keeps posting in background
 - **Comprehensive Error Handling**: Structured error logging with recovery hints, audit trail integration, and user notifications
+- **Developer Console**: In-app debug console (Ctrl+Shift+D) with logs, errors, and system info
 - **Async I/O**: Non-blocking API calls with aiohttp — GUI stays responsive during generation, posting, and scraping
 - **Database Migrations**: Alembic-managed schema migrations for safe upgrades
 - **Input Validation & Security**: Sanitization, SQL injection guards, rate limiting, and platform-specific content limits
 - **Auto-Updater**: Built-in update checker against GitHub releases
-- **GUI Polish**: Content calendar, post history search/filter, keyboard shortcuts (Ctrl+1-9, Ctrl+G/P/S/H/Q), and friendly empty states
+- **Diagnostics**: Full system health check (Ollama, DB, accounts, APIs, browsers) with export to JSON
+- **GUI Polish**: Content calendar, post history search/filter, keyboard shortcuts (Ctrl+1-9, Ctrl+G/P/S/H/Q), friendly empty states, neon toast notifications, card hover effects
 - **CLI + GUI + EXE**: Desktop app, command-line, and standalone Windows executable
 - **Settings Persistence**: Settings saved to disk and survive app restarts
 - **Dry-Run Mode**: Test pipelines safely without making real API calls
@@ -168,9 +171,15 @@ python -m src.cli --help
    ```
 
 10. **Schedule at best time** for engagement:
-    ```bash
-    python -m src.cli schedule-best-time --account-id 1 "Optimal timing post"
-    ```
+     ```bash
+     python -m src.cli schedule-best-time --account-id 1 "Optimal timing post"
+     ```
+
+11. **Run diagnostics** to check system health:
+     ```bash
+     python -m src.cli diagnose
+     python -m src.cli diagnose --json   # Export to JSON
+     ```
 
 ## CLI Commands
 
@@ -182,6 +191,7 @@ bulk-generate       Generate multiple posts across topics
 cancel              Cancel a scheduled post
 cross-post          Post to both X and TikTok simultaneously
 delete-account      Delete an account and all its data
+diagnose            Run system health diagnostics
 export-data         Export accounts, posts, and style profiles to JSON
 full-pipeline       Full pipeline: scrape → analyze → generate → queue
 generate            Generate a post for an account
@@ -210,6 +220,19 @@ Global options:
 - `--debug` — Enable debug logging
 - `--dry-run` — Simulate actions without making real API calls
 
+## GUI Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+1-9` | Switch tabs (Dashboard, Accounts, Style, Generate, Scheduler, History, Analytics, Reply Bot, Settings, Diagnostics) |
+| `Ctrl+G` | Go to Generate tab |
+| `Ctrl+P` | Go to Generate tab (Post Now) |
+| `Ctrl+S` | Go to Scheduler tab |
+| `Ctrl+H` | Go to History tab |
+| `Ctrl+Q` | Quit application |
+| `Ctrl+Shift+D` | Open Developer Console (logs, errors, system info) |
+| `Ctrl+?` | Show keyboard shortcuts help |
+
 ## Content Queue Workflow
 
 The content queue provides an approval workflow before publishing:
@@ -236,6 +259,23 @@ python -m src.cli queue-publish --queue-id 5
 # Or let the background worker auto-publish approved items
 ```
 
+## Diagnostics
+
+Run comprehensive system health checks from GUI or CLI:
+
+- **Ollama**: Connection, available models, preferred model
+- **Database**: SQLite connectivity, table integrity
+- **Accounts**: Count, active status, token expiry
+- **X API**: Bearer token validity, rate limits
+- **TikTok**: Playwright browser installation, cookies
+- **Stable Diffusion**: WebUI connectivity
+- **System Info**: OS, Python version, memory, disk
+
+```bash
+python -m src.cli diagnose
+python -m src.cli diagnose --json > diagnostics.json
+```
+
 ## Testing
 
 All tests run with pytest:
@@ -244,7 +284,7 @@ All tests run with pytest:
 pytest tests/ -v
 ```
 
-Current test coverage includes:
+Current test coverage (104 tests):
 - Content generation with mocked Ollama
 - OAuth flow token storage and refresh
 - TikTok upload dry-run and mocks
@@ -260,6 +300,9 @@ Current test coverage includes:
 - Dry-run mode across post commands
 - Error handler safe_call utility
 - Packaging smoke test
+- Input validation edge cases (sanitization, SQL injection, rate limiting)
+- Diagnostics health checks
+- Async error handling (offline Ollama, invalid credentials)
 
 ## Environment Variables
 
@@ -323,6 +366,8 @@ Current test coverage includes:
 - Credentials are encrypted at rest using Fernet
 - SQLAlchemy 2.0 compatible (uses `Session.get()` instead of legacy `Query.get()`)
 - Settings are persisted to `%APPDATA%/You2SocialBrain/settings.json` (Windows) or equivalent on macOS/Linux
+- **Thread Safety**: Flet is not thread-safe. All UI updates from background threads use `page.run()` to marshal to the main thread. The background Ollama status checker uses this pattern.
+- **Force Exit**: `os._exit(0)` is used as a fallback after graceful cleanup to guarantee the process terminates
 
 ## License
 

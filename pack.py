@@ -57,6 +57,9 @@ def _build_windows():
         "--hidden-import", "security.token_store",
         "--hidden-import", "analytics.metrics",
         "--hidden-import", "image_gen.sd_client",
+        "--hidden-import", "aiohttp",
+        "--hidden-import", "logging.handlers",
+        "--hidden-import", "packaging",
         "src/main.py"
     ]
     subprocess.run(cmd, check=True)
